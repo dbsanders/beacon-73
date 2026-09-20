@@ -1,5 +1,62 @@
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode-generated files
 DerivedData/
+build/
 *.xcuserstate
 xcuserdata/
+*.xccheckout
+*.xcscmblueprint
 
+# Swift Package Manager local state and build products
+.build/
+.swiftpm/
+
+# Terraform working data, plans, state, and local variable values
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Keep Terraform dependency selections reproducible
+!.terraform.lock.hcl
+
+# Python local environments, caches, and test output
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local environment and secret-bearing files
+.env
+.env.*
+!.env.example
+Secrets.xcconfig
+Local.xcconfig
+*.p12
+*.pfx
+*.mobileprovision
+
+# Editor and temporary files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
