@@ -1,0 +1,343 @@
+import CoreLocation
+import XCTest
+@testable import Beacon
+
+final class BeaconCoreTests: XCTestCase {
+    func testReceiveConnectionUsesOnlineStatusRegardlessOfTransmitValidation() {
+        XCTAssertEqual(AppModel.ConnectionState.connected(verified: true).shortLabel, "Online")
+        XCTAssertEqual(AppModel.ConnectionState.connected(verified: false).shortLabel, "Online")
+        XCTAssertEqual(AppModel.ConnectionState.unverified.shortLabel, "Online")
+    }
+
+    @MainActor
+    func testInvalidPasscodeIsReportedByAppModel() {
+        let model = AppModel()
+        model.settings.identity.callsign = "K6BAT"
+        model.settings.identity.ssid = "5"
+        model.settings.identity.passcode = "12345"
+        XCTAssertFalse(model.isAPRSISPasscodeValid)
+
+        model.settings.identity.passcode = "11925"
+        XCTAssertTrue(model.isAPRSISPasscodeValid)
+    }
+
+    func testLegacyDefaultBeaconMessageMigratesWithoutChangingCustomMessage() {
+        var legacy = AppSettings()
+        legacy.beaconing.comment = "Beacon for iOS"
+        AppSettings.migrateLegacyValues(in: &legacy)
+        XCTAssertEqual(legacy.beaconing.comment, "Beacon 73 for iOS")
+
+        var customized = AppSettings()
+        customized.beaconing.comment = "Mobile station"
+        AppSettings.migrateLegacyValues(in: &customized)
+        XCTAssertEqual(customized.beaconing.comment, "Mobile station")
+    }
+
+    @MainActor
+    func testBeaconNowUsesTenSecondCooldown() {
+        let now = Date()
+
+        XCTAssertEqual(
+            AppModel.beaconNowCooldownRemaining(
+                lastBeaconAt: now.addingTimeInterval(-2.2),
+                lastManualAttemptAt: nil,
+                now: now
+            ),
+            8
+        )
+        XCTAssertEqual(
+            AppModel.beaconNowCooldownRemaining(
+                lastBeaconAt: now.addingTimeInterval(-12),
+                lastManualAttemptAt: now.addingTimeInterval(-4),
+                now: now
+            ),
+            6
+        )
+        XCTAssertEqual(
+            AppModel.beaconNowCooldownRemaining(
+                lastBeaconAt: now.addingTimeInterval(-10),
+                lastManualAttemptAt: nil,
+                now: now
+            ),
+            0
+        )
+    }
+
+    func testAPRSISVerifiedLoginResponse() {
+        XCTAssertEqual(
+            APRSISClient.loginVerification(from: "# logresp K6BAT-5 verified, server T2CHILE"),
+            true
+        )
+        XCTAssertEqual(
+            APRSISClient.loginVerification(from: "# logresp K6BAT-5 unverified, server T2TEST"),
+            false
+        )
+    }
+
+    func testAPRSISStreamFramingHandlesSplitCRLFChunks() {
+        var buffer = Data()
+        let first = APRSISClient.extractLines(
+            from: &buffer,
+            appending: Data("# logresp K6BAT-5 verified\r".utf8)
+        )
+        let second = APRSISClient.extractLines(
+            from: &buffer,
+            appending: Data("\nK4NSY-R>APRS:!3339.29N/11745.23Wr".utf8)
+        )
+        let third = APRSISClient.extractLines(
+            from: &buffer,
+            appending: Data("\r\n".utf8)
+        )
+
+        XCTAssertEqual(first, ["# logresp K6BAT-5 verified"])
+        XCTAssertTrue(second.isEmpty)
+        XCTAssertEqual(third, ["K4NSY-R>APRS:!3339.29N/11745.23Wr"])
+        XCTAssertTrue(buffer.isEmpty)
+    }
+
+    func testK6BATPasscodeValidationIgnoresSSID() {
+        XCTAssertEqual(APRSISClient.expectedPasscode(for: "K6BAT"), 11925)
+        XCTAssertEqual(APRSISClient.expectedPasscode(for: "K6BAT-5"), 11925)
+        XCTAssertTrue(APRSISClient.passcode("11925", isValidFor: "K6BAT-5"))
+        XCTAssertFalse(APRSISClient.passcode("11924", isValidFor: "K6BAT-5"))
+    }
+
+    func testAPRSSymbolSpritesAreBundled() {
+        XCTAssertNotNil(Bundle.main.url(forResource: "aprs-symbols-64-0", withExtension: "png"))
+        XCTAssertNotNil(Bundle.main.url(forResource: "aprs-symbols-64-1", withExtension: "png"))
+        XCTAssertNotNil(Bundle.main.url(forResource: "APRS-SYMBOLS-COPYRIGHT", withExtension: "md"))
+    }
+
+    func testEmptyIdentityDoesNotRenderSSIDByItself() {
+        let identity = AppSettings.Identity()
+
+        XCTAssertEqual(identity.fullCallsign, "")
+        XCTAssertFalse(identity.isReady)
+    }
+
+    func testIdentityEnforcesValidSSIDRange() {
+        var identity = AppSettings.Identity()
+        identity.callsign = "k6bat"
+
+        identity.ssid = "0"
+        XCTAssertEqual(identity.fullCallsign, "K6BAT")
+
+        identity.ssid = "15"
+        XCTAssertEqual(identity.fullCallsign, "K6BAT-15")
+
+        identity.ssid = "16"
+        XCTAssertEqual(identity.fullCallsign, "K6BAT")
+    }
+
+    func testLegacyFixedModeMigratesToTimed() throws {
+        let mode = try JSONDecoder().decode(
+            AppSettings.Beaconing.Mode.self,
+            from: Data("\"Fixed\"".utf8)
+        )
+
+        XCTAssertEqual(mode, .timed)
+    }
+
+    func testTimedModeUsesSelectedInterval() {
+        let now = Date()
+        let previous = CLLocation(latitude: 33.7, longitude: -117.7)
+        let current = CLLocation(latitude: 33.8, longitude: -117.8)
+        var configuration = AppSettings.Beaconing()
+        configuration.mode = .timed
+        configuration.timedInterval = 90
+
+        let decision = SmartBeaconingPolicy().decision(
+            current: current,
+            previousBeacon: previous,
+            lastBeaconAt: now.addingTimeInterval(-90),
+            configuration: configuration,
+            now: now
+        )
+
+        XCTAssertTrue(decision.shouldBeacon)
+        XCTAssertEqual(decision.reason, "Interval elapsed")
+    }
+
+    func testPositionPacketUsesTNC2AndUncompressedCoordinates() {
+        let location = CLLocation(
+            coordinate: .init(latitude: 33.708865, longitude: -117.764063),
+            altitude: 62,
+            horizontalAccuracy: 5,
+            verticalAccuracy: 5,
+            course: 128,
+            speed: 15.2,
+            timestamp: .now
+        )
+
+        let packet = APRSPacket.position(callsign: "K6BAT-5", location: location, symbol: "/>", comment: "Beacon")
+
+        XCTAssertEqual(packet.source, "K6BAT-5")
+        XCTAssertTrue(packet.tnc2.hasPrefix("K6BAT-5>APRS,TCPIP*:!3342.53N/11745.84W>128/030"))
+        XCTAssertTrue(packet.tnc2.hasSuffix("Beacon"))
+    }
+
+    func testAlternateSymbolTableIsEncodedInPosition() {
+        let location = CLLocation(latitude: 33.708865, longitude: -117.764063)
+
+        let packet = APRSPacket.position(callsign: "K6BAT-5", location: location, symbol: "\\>", comment: "")
+
+        XCTAssertTrue(packet.information.hasPrefix("!3342.53N\\11745.84W>"))
+    }
+
+    func testParserReadsPositionCourseAndSpeed() {
+        let station = APRSParser.station(from: "K6BAT-5>APRS,TCPIP*:!3342.53N/11745.84W>128/030Mobile")
+
+        XCTAssertEqual(station?.callsign, "K6BAT-5")
+        XCTAssertEqual(station?.coordinate.latitude ?? 0, 33.708833, accuracy: 0.00001)
+        XCTAssertEqual(station?.coordinate.longitude ?? 0, -117.764, accuracy: 0.00001)
+        XCTAssertEqual(station?.course, 128)
+        XCTAssertEqual(station?.comment, "Mobile")
+        XCTAssertEqual(station?.symbolTable, "/")
+        XCTAssertEqual(station?.symbol, ">")
+    }
+
+    func testParserReadsLiveUncompressedPackets() {
+        let station = APRSParser.station(
+            from: "K4NSY-R>APDG03,TCPIP*,qAC,K4NSY-RS:!3339.29N/11745.23Wr/A=00000070cm MMDVM"
+        )
+
+        XCTAssertEqual(station?.callsign, "K4NSY-R")
+        XCTAssertEqual(station?.coordinate.latitude ?? 0, 33.654833, accuracy: 0.00001)
+        XCTAssertEqual(station?.coordinate.longitude ?? 0, -117.753833, accuracy: 0.00001)
+        XCTAssertEqual(station?.symbolTable, "/")
+        XCTAssertEqual(station?.symbol, "r")
+        XCTAssertEqual(station?.comment, "70cm MMDVM")
+    }
+
+    func testParserReadsCompressedPositionPackets() {
+        let station = APRSParser.station(
+            from: "KO6DSS-10>APLRG1,TCPIP*,qAC,T2FRANCE:=L=Y7v0o6ca !GLoRa APRS"
+        )
+
+        XCTAssertEqual(station?.callsign, "KO6DSS-10")
+        XCTAssertEqual(station?.coordinate.latitude ?? 0, 33.386, accuracy: 0.001)
+        XCTAssertEqual(station?.coordinate.longitude ?? 0, -117.25, accuracy: 0.01)
+        XCTAssertEqual(station?.symbolTable, "L")
+        XCTAssertEqual(station?.symbol, "a")
+        XCTAssertEqual(station?.comment, "LoRa APRS")
+    }
+
+    func testParserCleansMachineFieldsFromStationComments() {
+        let station = APRSParser.station(
+            from: "K6NTE-7>APDW18,TCPIP*:!3411.61NR11820.62W&PHG2000Burbank"
+        )
+        let altitudeStation = APRSParser.station(
+            from: "KE6UAF>APRS:!3342.95N/11708.77W[/A=000271via APRS"
+        )
+
+        XCTAssertEqual(station?.comment, "Burbank")
+        XCTAssertEqual(altitudeStation?.comment, "via APRS")
+    }
+
+    func testParserRemovesDAOExtensionsWithoutRemovingHumanPunctuation() {
+        let daoStation = APRSParser.station(
+            from: "K6BAT-5>APRS:!3342.53N/11745.84W>!wAB!Heading home!"
+        )
+        let humanComment = APRSParser.station(
+            from: "K6BAT-5>APRS:!3342.53N/11745.84W>Great signal!"
+        )
+
+        XCTAssertEqual(daoStation?.comment, "Heading home!")
+        XCTAssertEqual(humanComment?.comment, "Great signal!")
+    }
+
+    func testParserFormatsWeatherCommentForDisplay() {
+        let station = APRSParser.station(
+            from: "K6CED>APRS:@182322z3332.32N/11706.70W_261/000g005t080r000p000P000h50b10174L339AmbientCWOP.com"
+        )
+
+        XCTAssertEqual(
+            station?.comment,
+            "80°F · Gust 5 mph · Humidity 50% · 1017.4 hPa · AmbientCWOP.com"
+        )
+    }
+
+    func testStationTypeClassification() {
+        let moving = APRSParser.station(from: "MOBILE>APRS:!3342.53N/11745.84W>000/000Car")
+        let fixed = APRSParser.station(from: "REPEATER>APRS:!3342.53N/11745.84WrRepeater")
+        let weather = APRSParser.station(from: "WEATHER>APRS:!3342.53N/11745.84W_000/000t080")
+
+        XCTAssertEqual(moving?.stationType, .moving)
+        XCTAssertEqual(fixed?.stationType, .fixed)
+        XCTAssertEqual(weather?.stationType, .weather)
+    }
+
+    func testLegacyDisplaySettingsDefaultToMovingStationsOnly() throws {
+        let display = try JSONDecoder().decode(
+            AppSettings.Display.self,
+            from: Data(#"{"speedUnit":"mph","distanceUnit":"Miles","showStations":true,"showTrail":true}"#.utf8)
+        )
+
+        XCTAssertTrue(display.showMovingStations)
+        XCTAssertFalse(display.showFixedStations)
+        XCTAssertFalse(display.showWeatherStations)
+    }
+
+    func testParserReadsMicEPositionPackets() {
+        let station = APRSParser.station(
+            from: "K6EYE-9>SWTUVY,WR6ABD,K6FGA-1*,WIDE2:`26SmJ`E/]\"4V}="
+        )
+
+        XCTAssertEqual(station?.callsign, "K6EYE-9")
+        XCTAssertEqual(station?.coordinate.latitude ?? 0, 37.7615, accuracy: 0.0001)
+        XCTAssertEqual(station?.coordinate.longitude ?? 0, -122.4425, accuracy: 0.0001)
+        XCTAssertEqual(station?.course, 268)
+        XCTAssertEqual(station?.speedMetersPerSecond ?? 0, 7.202, accuracy: 0.01)
+        XCTAssertEqual(station?.symbolTable, "/")
+        XCTAssertEqual(station?.symbol, "E")
+    }
+
+    func testParserExtractsMicEAltitudeAndRemovesDeviceIdentifier() {
+        let station = APRSParser.station(
+            from: "KJ6SVN-7>STPQRR,WIDE1-1,WIDE2-1,qAR,N6KMA:`-J:m4/>/`\"7+}_%"
+        )
+
+        XCTAssertEqual(station?.symbol, ">")
+        XCTAssertEqual(station?.symbolTable, "/")
+        XCTAssertEqual(station?.altitudeMeters, 293)
+        XCTAssertEqual(station?.comment, "")
+        XCTAssertEqual(station?.equipment, "Yaesu FTM-400DR")
+    }
+
+    func testParserDecodesLegacyMicEEquipmentIdentifiers() {
+        let thd75 = APRSParser.station(
+            from: "KO6KWA-9>STPQRR,WIDE1-1:`-J:m4/>/>&"
+        )
+        let tmD700 = APRSParser.station(
+            from: "KI6NAZ>STPQRR,WIDE1-1:`-J:m4/>/]&"
+        )
+
+        XCTAssertEqual(thd75?.equipment, "Kenwood TH-D75")
+        XCTAssertEqual(thd75?.comment, "")
+        XCTAssertEqual(tmD700?.equipment, "Kenwood TM-D700 family")
+        XCTAssertEqual(tmD700?.comment, "")
+    }
+
+    func testParserReadsMicEPositionWithAmbiguity() {
+        let station = APRSParser.station(
+            from: "AJ6EE-2>S3UQZZ,WIDE1-1,WIDE2-1,qAO,W6MFB:`-P\u{001C}l!*YY`\"4n}_5"
+        )
+
+        XCTAssertEqual(station?.coordinate.latitude ?? 0, 33.858333, accuracy: 0.00001)
+        XCTAssertEqual(station?.coordinate.longitude ?? 0, -117.875, accuracy: 0.00001)
+        XCTAssertEqual(station?.stationType, .moving)
+        XCTAssertEqual(station?.equipment, "Yaesu FTM-510D")
+    }
+
+    func testSmartBeaconingSendsFirstPosition() {
+        let location = CLLocation(latitude: 33.7, longitude: -117.7)
+        let decision = SmartBeaconingPolicy().decision(
+            current: location,
+            previousBeacon: nil,
+            lastBeaconAt: nil,
+            configuration: .init()
+        )
+        XCTAssertTrue(decision.shouldBeacon)
+        XCTAssertEqual(decision.reason, "First position")
+    }
+}
