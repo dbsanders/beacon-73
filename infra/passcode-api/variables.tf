@@ -4,6 +4,17 @@ variable "aws_region" {
   default     = "us-west-2"
 }
 
+variable "expected_account_id" {
+  description = "AWS account that is allowed to host the production stack."
+  type        = string
+  default     = "422095364378"
+
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.expected_account_id))
+    error_message = "expected_account_id must be a 12-digit AWS account ID."
+  }
+}
+
 variable "environment" {
   description = "Short environment name used in resource names and tags."
   type        = string
@@ -34,6 +45,17 @@ variable "rate_limit_window_seconds" {
   validation {
     condition     = var.rate_limit_window_seconds >= 1 && floor(var.rate_limit_window_seconds) == var.rate_limit_window_seconds
     error_message = "rate_limit_window_seconds must be a positive whole number."
+  }
+}
+
+variable "lookup_rate_limit_requests" {
+  description = "Maximum FCC callsign lookups per source IP in each fixed window."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.lookup_rate_limit_requests >= 1 && floor(var.lookup_rate_limit_requests) == var.lookup_rate_limit_requests
+    error_message = "lookup_rate_limit_requests must be a positive whole number."
   }
 }
 

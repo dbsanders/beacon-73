@@ -3,6 +3,58 @@ import XCTest
 @testable import Beacon
 
 final class BeaconCoreTests: XCTestCase {
+    func testInternationalAmateurCallsignValidation() {
+        for callsign in ["K6BAT", "W1AW", "VE3ABC", "DL1ABC", "2E0ABC", "3DA0RS"] {
+            XCTAssertNotNil(AmateurCallsignValidator.normalizedBase(from: callsign), callsign)
+        }
+
+        for callsign in ["", "NOTACALL", "K6BAT-16", "K6BAT/P", "12345"] {
+            XCTAssertNil(AmateurCallsignValidator.normalizedBase(from: callsign), callsign)
+        }
+    }
+
+    func testCallsignValidationNormalizesCaseAndSSID() {
+        XCTAssertEqual(AmateurCallsignValidator.normalizedBase(from: " k6bat-5 "), "K6BAT")
+    }
+
+    func testPasscodeRequestIncludesCallsignAndAttestation() throws {
+        let endpoint = try XCTUnwrap(URL(string: "https://example.com/v1/passcode"))
+        let request = try PasscodeRequestClient.makeRequest(endpoint: endpoint, callsign: "K6BAT")
+        let body = try XCTUnwrap(request.httpBody)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertEqual(json["callsign"] as? String, "K6BAT")
+        XCTAssertEqual(json["attestation"] as? Bool, true)
+    }
+
+    func testFccLookupRequestNormalizesCallsign() throws {
+        let baseURL = try XCTUnwrap(URL(string: "https://example.com"))
+        let request = try PasscodeRequestClient.makeLookupRequest(
+            baseURL: baseURL,
+            callsign: " k6bat-5 "
+        )
+
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertEqual(request.url?.absoluteString, "https://example.com/v1/callsigns/K6BAT")
+    }
+
+
+    func testPasscodeRequestDecodesApprovedResponse() throws {
+        let data = Data(
+            #"{"callsign":"K6BAT","passcode":11925,"attestationRecorded":true}"#.utf8
+        )
+
+        let result = try PasscodeRequestClient.decodeResponse(data: data, statusCode: 200)
+
+        XCTAssertEqual(result, PasscodeRequestResult(
+            callsign: "K6BAT",
+            passcode: 11925,
+            attestationRecorded: true
+        ))
+    }
+
     func testReceiveConnectionUsesOnlineStatusRegardlessOfTransmitValidation() {
         XCTAssertEqual(AppModel.ConnectionState.connected(verified: true).shortLabel, "Online")
         XCTAssertEqual(AppModel.ConnectionState.connected(verified: false).shortLabel, "Online")

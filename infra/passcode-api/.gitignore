@@ -1,5 +1,6 @@
 .DS_Store
 .terraform/
+backend.hcl
 *.tfstate
 *.tfstate.*
 *.tfplan

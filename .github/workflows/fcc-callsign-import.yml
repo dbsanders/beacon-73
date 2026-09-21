@@ -1,0 +1,61 @@
+name: Refresh FCC callsign data
+
+on:
+  schedule:
+    - cron: "0 18 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: fcc-callsign-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::422095364378:role/beacon73-passcode-prod-github-fcc-import
+          aws-region: us-west-2
+          allowed-account-ids: "422095364378"
+
+      - name: Download the official FCC archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_url="https://data.fcc.gov/download/pub/uls/complete/l_amat.zip"
+          curl --fail --location --retry 4 --retry-all-errors \
+            --output /tmp/l_amat.zip "$archive_url"
+          unzip -t /tmp/l_amat.zip >/dev/null
+
+          source_updated_at="$(curl --fail --silent --show-error --head "$archive_url" \
+            | awk 'BEGIN {IGNORECASE=1} /^last-modified:/ {sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}')"
+          source_updated_at="$(date --utc --date="$source_updated_at" +%Y-%m-%dT%H:%M:%SZ)"
+          dataset_id="$(date --utc --date="$source_updated_at" +%Y%m%dT%H%M%SZ)"
+          raw_key="imports/${dataset_id}/l_amat.zip"
+
+          aws s3 cp /tmp/l_amat.zip \
+            "s3://beacon73-fcc-data-422095364378-us-west-2/${raw_key}" \
+            --content-type application/zip \
+            --metadata "source-updated-at=${source_updated_at}"
+          printf 'RAW_KEY=%s\n' "$raw_key" >> "$GITHUB_ENV"
+
+      - name: Build and publish callsign shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload="$(printf '{"rawKey":"%s"}' "$RAW_KEY")"
+          aws lambda invoke \
+            --function-name beacon73-passcode-prod-fcc-importer \
+            --cli-binary-format raw-in-base64-out \
+            --payload "$payload" \
+            --cli-read-timeout 900 \
+            /tmp/import-result.json
+          cat /tmp/import-result.json
+          jq -e '.recordCount > 0' /tmp/import-result.json >/dev/null

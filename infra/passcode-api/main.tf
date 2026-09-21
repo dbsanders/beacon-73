@@ -1,6 +1,8 @@
 provider "aws" {
   region = var.aws_region
 
+  allowed_account_ids = [var.expected_account_id]
+
   default_tags {
     tags = merge({
       Application = "Beacon73"
@@ -88,6 +90,15 @@ resource "aws_iam_role_policy" "lambda" {
           "logs:PutLogEvents"
         ]
         Resource = "${aws_cloudwatch_log_group.lambda.arn}:*"
+      },
+      {
+        Sid    = "ReadFccCallsignIndex"
+        Effect = "Allow"
+        Action = ["s3:GetObject"]
+        Resource = [
+          "${aws_s3_bucket.fcc_data.arn}/current/*",
+          "${aws_s3_bucket.fcc_data.arn}/datasets/*"
+        ]
       }
     ]
   })
@@ -105,8 +116,8 @@ resource "aws_lambda_function" "passcode" {
   handler       = "app.lambda_handler"
   runtime       = "python3.12"
   architectures = ["arm64"]
-  memory_size   = 128
-  timeout       = 5
+  memory_size   = 256
+  timeout       = 10
 
   filename         = data.archive_file.lambda.output_path
   source_code_hash = data.archive_file.lambda.output_base64sha256
@@ -117,8 +128,10 @@ resource "aws_lambda_function" "passcode" {
       RATE_LIMIT_REQUESTS        = tostring(var.rate_limit_requests)
       RATE_LIMIT_WINDOW_SECONDS  = tostring(var.rate_limit_window_seconds)
       ATTESTATION_RETENTION_DAYS = tostring(var.attestation_retention_days)
-      ATTESTATION_VERSION        = "v1"
+      ATTESTATION_VERSION        = "v2"
       HASH_SALT                  = random_password.hash_salt.result
+      FCC_BUCKET_NAME            = aws_s3_bucket.fcc_data.id
+      LOOKUP_RATE_LIMIT_REQUESTS = tostring(var.lookup_rate_limit_requests)
     }
   }
 
@@ -146,12 +159,18 @@ resource "aws_apigatewayv2_integration" "lambda" {
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.passcode.invoke_arn
   payload_format_version = "2.0"
-  timeout_milliseconds   = 5000
+  timeout_milliseconds   = 10000
 }
 
 resource "aws_apigatewayv2_route" "request_passcode" {
   api_id    = aws_apigatewayv2_api.passcode.id
   route_key = "POST /v1/passcode"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "lookup_callsign" {
+  api_id    = aws_apigatewayv2_api.passcode.id
+  route_key = "GET /v1/callsigns/{callsign}"
   target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
 }
 
@@ -186,4 +205,3 @@ resource "aws_lambda_permission" "api_gateway" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.passcode.execution_arn}/*/*"
 }
-

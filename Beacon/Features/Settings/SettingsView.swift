@@ -3,6 +3,8 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var isPasscodeVisible = false
+    @State private var isShowingPasscodeRequest = false
+    @State private var passcodeRequestConfirmation: String?
     let showMap: () -> Void
 
     var body: some View {
@@ -74,6 +76,21 @@ struct SettingsView: View {
                                 text: "The APRS-IS validation number derived from your call sign. It is not your FCC or website password."
                             )
                         }
+                    }
+
+                    Button {
+                        dismissKeyboard()
+                        isShowingPasscodeRequest = true
+                    } label: {
+                        Label("Request a passcode", systemImage: "key.horizontal")
+                    }
+                    .disabled(AmateurCallsignValidator.normalizedBase(from: model.settings.identity.callsign) == nil)
+
+                    if !model.settings.identity.callsign.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       AmateurCallsignValidator.normalizedBase(from: model.settings.identity.callsign) == nil {
+                        Label("Enter a valid amateur-radio call sign.", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.red)
                     }
 
                     if model.settings.identity.isReady, !model.isAPRSISPasscodeValid {
@@ -173,6 +190,210 @@ struct SettingsView: View {
             .onDisappear {
                 model.saveSettings()
                 Task { await model.startReceiving() }
+            }
+            .sheet(isPresented: $isShowingPasscodeRequest) {
+                PasscodeRequestSheet(callsign: model.settings.identity.callsign) { result in
+                    model.settings.identity.callsign = result.callsign
+                    model.settings.identity.passcode = String(result.passcode)
+                    model.saveSettings()
+                    passcodeRequestConfirmation = "Your APRS-IS passcode was approved and saved for \(result.callsign)."
+                }
+            }
+            .alert(
+                "Passcode Saved",
+                isPresented: Binding(
+                    get: { passcodeRequestConfirmation != nil },
+                    set: { if !$0 { passcodeRequestConfirmation = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(passcodeRequestConfirmation ?? "")
+            }
+        }
+    }
+}
+
+private struct PasscodeRequestSheet: View {
+    private enum FCCLookupState {
+        case loading
+        case matched(FCCCallsignRecord, FCCCallsignLookup.Dataset)
+        case notFound(FCCCallsignLookup.Dataset)
+        case unavailable
+    }
+
+    @Environment(\.dismiss) private var dismiss
+    let callsign: String
+    let onApproval: (PasscodeRequestResult) -> Void
+
+    @State private var hasAttested = false
+    @State private var isSubmitting = false
+    @State private var errorMessage: String?
+    @State private var fccLookupState = FCCLookupState.loading
+
+    private var normalizedCallsign: String {
+        AmateurCallsignValidator.normalizedBase(from: callsign)
+            ?? callsign.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Passcode request") {
+                    LabeledContent("Call Sign", value: normalizedCallsign)
+
+                    Text("Beacon 73 will securely send this call sign to the passcode service for validation and approval.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                fccRecordSection
+
+                Section {
+                    Button {
+                        hasAttested.toggle()
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: hasAttested ? "checkmark.square.fill" : "square")
+                                .font(.title3)
+                                .foregroundStyle(hasAttested ? .blue : .secondary)
+                            Text("I attest that I am a licensed amateur-radio operator and am the licensee, trustee, or otherwise authorized to use **\(normalizedCallsign)**.")
+                                .foregroundStyle(.primary)
+                                .multilineTextAlignment(.leading)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Licensed operator and call sign authorization attestation")
+                    .accessibilityValue(hasAttested ? "Accepted" : "Not accepted")
+                    .accessibilityAddTraits(hasAttested ? .isSelected : [])
+                } header: {
+                    Text("Required attestation")
+                } footer: {
+                    Text("Your attestation and request time are recorded by the service. Your APRS-IS passcode is not stored by the service.")
+                }
+
+                Section {
+                    Button {
+                        submitRequest()
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if isSubmitting {
+                                ProgressView()
+                                    .padding(.trailing, 4)
+                                Text("Validating…")
+                            } else {
+                                Text("Submit Request")
+                            }
+                            Spacer()
+                        }
+                    }
+                    .disabled(!hasAttested || isSubmitting || isLookupLoading)
+                }
+            }
+            .navigationTitle("Request Passcode")
+            .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSubmitting)
+            .task { await loadFCCRecord() }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isSubmitting)
+                }
+            }
+            .alert(
+                "Unable to Request Passcode",
+                isPresented: Binding(
+                    get: { errorMessage != nil },
+                    set: { if !$0 { errorMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(errorMessage ?? "")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var fccRecordSection: some View {
+        switch fccLookupState {
+        case .loading:
+            Section("FCC license record") {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Searching FCC amateur licenses…")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        case .matched(let record, let dataset):
+            Section {
+                if let licenseeName = record.licenseeName {
+                    LabeledContent("Licensee", value: licenseeName)
+                }
+                LabeledContent("Status", value: record.status)
+                if let operatorClass = record.operatorClassDescription {
+                    LabeledContent("Class", value: operatorClass)
+                }
+                if let expirationDate = record.expirationDate {
+                    LabeledContent("Expires", value: expirationDate)
+                }
+            } header: {
+                Text("FCC license record")
+            } footer: {
+                Text("Public FCC ULS data updated \(dataset.updateDateDescription). Address and contact details are not retained by Beacon 73.")
+            }
+        case .notFound(let dataset):
+            Section("FCC license record") {
+                Label("No active U.S. FCC record was found.", systemImage: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                Text("International callsigns are not included in FCC data. You may continue if you are authorized to use this callsign.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("FCC data updated \(dataset.updateDateDescription)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        case .unavailable:
+            Section("FCC license record") {
+                Label("FCC record lookup is temporarily unavailable.", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                Text("You may still continue with the required authorization attestation.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var isLookupLoading: Bool {
+        if case .loading = fccLookupState { return true }
+        return false
+    }
+
+    private func loadFCCRecord() async {
+        do {
+            let lookup = try await PasscodeRequestClient().lookupCallsign(normalizedCallsign)
+            if let record = lookup.record {
+                fccLookupState = .matched(record, lookup.dataset)
+            } else {
+                fccLookupState = .notFound(lookup.dataset)
+            }
+        } catch {
+            fccLookupState = .unavailable
+        }
+    }
+
+    private func submitRequest() {
+        guard hasAttested, !isSubmitting else { return }
+        isSubmitting = true
+        Task {
+            defer { isSubmitting = false }
+            do {
+                let result = try await PasscodeRequestClient().requestPasscode(for: normalizedCallsign)
+                onApproval(result)
+                dismiss()
+            } catch {
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }
         }
     }

@@ -31,6 +31,7 @@
 		B10000000000000000000016 /* aprs-symbols-64-1.png in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000019 /* aprs-symbols-64-1.png */; };
 		B10000000000000000000017 /* APRS-SYMBOLS-COPYRIGHT.md in Resources */ = {isa = PBXBuildFile; fileRef = F1000000000000000000001A /* APRS-SYMBOLS-COPYRIGHT.md */; };
 		B10000000000000000000018 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F1000000000000000000001B /* Assets.xcassets */; };
+		B10000000000000000000019 /* PasscodeRequestClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1000000000000000000001C /* PasscodeRequestClient.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -71,6 +72,7 @@
 		F10000000000000000000019 /* aprs-symbols-64-1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "aprs-symbols-64-1.png"; sourceTree = "<group>"; };
 		F1000000000000000000001A /* APRS-SYMBOLS-COPYRIGHT.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = "APRS-SYMBOLS-COPYRIGHT.md"; sourceTree = "<group>"; };
 		F1000000000000000000001B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F1000000000000000000001C /* PasscodeRequestClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasscodeRequestClient.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -200,6 +202,7 @@
 				F10000000000000000000007 /* APRSPacket.swift */,
 				F10000000000000000000008 /* APRSParser.swift */,
 				F10000000000000000000009 /* APRSISClient.swift */,
+				F1000000000000000000001C /* PasscodeRequestClient.swift */,
 			);
 			path = APRS;
 			sourceTree = "<group>";
@@ -365,6 +368,7 @@
 				B10000000000000000000012 /* KeychainStore.swift in Sources */,
 				B10000000000000000000013 /* APRSSymbol.swift in Sources */,
 				B10000000000000000000014 /* APRSSymbolIcon.swift in Sources */,
+				B10000000000000000000019 /* PasscodeRequestClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

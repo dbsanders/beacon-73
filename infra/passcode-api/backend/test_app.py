@@ -1,3 +1,5 @@
+import gzip
+import io
 import json
 import os
 import sys
@@ -15,12 +17,24 @@ import app
 class PasscodeTests(unittest.TestCase):
     def setUp(self):
         app.TABLE = MagicMock()
+        app.S3 = MagicMock()
+        app.FCC_CACHE.clear()
         self.context = SimpleNamespace(aws_request_id="test-request")
 
     def event(self, payload):
         return {
             "body": json.dumps(payload),
             "requestContext": {"http": {"sourceIp": "192.0.2.1"}},
+            "headers": {"user-agent": "Beacon73Tests/1"},
+        }
+
+    def lookup_event(self, callsign):
+        return {
+            "requestContext": {
+                "routeKey": "GET /v1/callsigns/{callsign}",
+                "http": {"sourceIp": "192.0.2.1"},
+            },
+            "pathParameters": {"callsign": callsign},
             "headers": {"user-agent": "Beacon73Tests/1"},
         }
 
@@ -57,6 +71,37 @@ class PasscodeTests(unittest.TestCase):
         stored_item = app.TABLE.put_item.call_args.kwargs["Item"]
         self.assertNotIn("passcode", stored_item)
         self.assertTrue(stored_item["attested"])
+
+    def test_fcc_lookup_returns_matching_record(self):
+        manifest = {
+            "datasetId": "20260920T133208Z",
+            "sourceUpdatedAt": "2026-09-20T13:32:08+00:00",
+            "recordCount": 823264,
+            "shardPrefixLength": 3,
+            "shards": ["K6B"],
+        }
+        record = {
+            "K6BAT": {
+                "callsign": "K6BAT",
+                "status": "Active",
+                "licenseeName": "Sanders, Bret",
+                "operatorClass": "E",
+                "expirationDate": "2035-05-23",
+            }
+        }
+        app.S3.get_object.side_effect = [
+            {"Body": io.BytesIO(json.dumps(manifest).encode())},
+            {"Body": io.BytesIO(gzip.compress(json.dumps(record).encode()))},
+        ]
+
+        result = app.lambda_handler(self.lookup_event("k6bat-5"), self.context)
+
+        self.assertEqual(result["statusCode"], 200)
+        body = json.loads(result["body"])
+        self.assertEqual(body["callsign"], "K6BAT")
+        self.assertEqual(body["record"]["licenseeName"], "Sanders, Bret")
+        self.assertEqual(body["dataset"]["recordCount"], 823264)
+
 
 
 if __name__ == "__main__":
