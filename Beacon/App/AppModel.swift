@@ -121,6 +121,7 @@ final class AppModel {
     private var beaconTask: Task<Void, Never>?
     private var lastBeaconLocation: CLLocation?
     private var lastManualBeaconAttemptAt: Date?
+    private var hasPreparedForLaunch = false
 
     init() {
         experienceMode = Self.initialExperienceMode(
@@ -135,7 +136,7 @@ final class AppModel {
     }
 
     func startBeaconing() async {
-        guard !isDemoMode else {
+        guard experienceMode == .live else {
             beaconAlertMessage = "Transmitting is disabled in Demo Mode. Set up your own call sign and APRS-IS passcode first."
             return
         }
@@ -179,7 +180,7 @@ final class AppModel {
 
     func beaconNow() async {
         beaconAlertMessage = nil
-        guard !isDemoMode else {
+        guard experienceMode == .live else {
             beaconAlertMessage = "Transmitting is disabled in Demo Mode. Set up your own call sign and APRS-IS passcode first."
             return
         }
@@ -251,6 +252,21 @@ final class AppModel {
         )
     }
 
+    func prepareForLaunch() async {
+        guard !hasPreparedForLaunch else { return }
+        hasPreparedForLaunch = true
+
+        // Auto-beaconing is intentionally not restored after the app process ends.
+        // ActivityKit can preserve an earlier Live Activity across a restart, so
+        // discard any restored activity before starting a fresh app session.
+        await endLiveActivity()
+
+        guard experienceMode == .live, settings.identity.isReady else {
+            locationService.stop()
+            return
+        }
+    }
+
     func appDidEnterBackground() async {
         guard !isBeaconing else { return }
 
@@ -268,8 +284,9 @@ final class AppModel {
     }
 
     func appDidBecomeActive() async {
-        guard experienceMode == .live else {
+        guard experienceMode == .live, settings.identity.isReady else {
             locationService.stop()
+            await endLiveActivity()
             return
         }
         locationService.start(background: isBeaconing)

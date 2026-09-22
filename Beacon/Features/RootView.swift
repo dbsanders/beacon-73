@@ -32,6 +32,7 @@ struct RootView: View {
         .tint(.blue)
         .preferredColorScheme(.dark)
         .task {
+            await model.prepareForLaunch()
             guard model.experienceMode != .undecided else { return }
             if !model.isDemoMode {
                 model.locationService.requestAlwaysPermission()

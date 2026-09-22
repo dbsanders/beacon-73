@@ -36,14 +36,22 @@ final class BeaconLiveActivityController {
     }
 
     func end(with state: BeaconActivityAttributes.ContentState) async {
-        guard let current = activity ?? Activity<BeaconActivityAttributes>.activities.first else {
+        var currentActivities = Activity<BeaconActivityAttributes>.activities
+        if let activity, !currentActivities.contains(where: { $0.id == activity.id }) {
+            currentActivities.append(activity)
+        }
+
+        guard !currentActivities.isEmpty else {
             lastState = nil
             return
         }
-        await current.end(
-            ActivityContent(state: state, staleDate: nil),
-            dismissalPolicy: .immediate
-        )
+
+        for current in currentActivities {
+            await current.end(
+                ActivityContent(state: state, staleDate: nil),
+                dismissalPolicy: .immediate
+            )
+        }
         activity = nil
         lastState = nil
     }
