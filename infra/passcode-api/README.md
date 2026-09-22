@@ -1,6 +1,6 @@
-# Beacon 73 APRS-IS passcode API
+# Beacon 73 AWS infrastructure
 
-This project deploys a small, serverless AWS API for Beacon 73. The iOS app sends a callsign and an explicit license attestation; the API normalizes and validates the callsign, rate-limits the source, records the attestation, computes the deterministic APRS-IS passcode, and returns it. Passcodes are never stored or logged.
+This Terraform root manages the AWS infrastructure for Beacon 73: the serverless APRS-IS passcode and FCC callsign API, plus the public website at `https://beacon73.com`.
 
 ## Architecture
 
@@ -10,6 +10,8 @@ This project deploys a small, serverless AWS API for Beacon 73. The iOS app send
 - **S3** privately stores the FCC weekly archive and a compact, privacy-minimized callsign index split into gzip-compressed shards.
 - **A scheduled GitHub Actions workflow** downloads the official FCC archive, uploads it with short-lived AWS credentials, and invokes a Lambda that rebuilds the index. The new manifest is published only after every shard is ready.
 - **CloudWatch Logs** retains structured Lambda and API access logs for 30 days by default. Access logs omit request bodies and source IPs.
+- **S3 and CloudFront** publish the static marketing, support, and privacy site from a private, encrypted, versioned bucket.
+- **ACM** provides the website certificate in `us-east-1`; Cloudflare hosts the public DNS records.
 
 There are no always-on servers. For a small app, the AWS usage should generally remain within or near serverless free-tier levels, depending on traffic and account eligibility. DynamoDB point-in-time recovery is enabled as a secure default and may add a small charge.
 
@@ -63,7 +65,7 @@ Rate-limit entries use only a keyed source-IP hash and fixed-window timestamp. T
 - AWS credentials with permission to create API Gateway, Lambda, DynamoDB, S3, IAM/OIDC role and policy, and CloudWatch resources
 - Python 3.12 for local tests
 
-Production state is stored in `terraform-state-422095364378-us-west-2` under `beacon/passcode-api/prod/terraform.tfstate`. The local `backend.hcl` file is ignored; copy `backend.hcl.example` for a fresh checkout. Terraform state contains the generated HMAC salt used to pseudonymize network identifiers.
+Production state is stored in `terraform-state-422095364378-us-west-2` under `beacon/passcode-api/prod/terraform.tfstate`. The local `backend.hcl` file is ignored; copy `backend.hcl.example` for a fresh checkout. Terraform state contains the generated HMAC salt used to pseudonymize network identifiers and the state for the website resources.
 
 ## Deploy
 
@@ -73,6 +75,14 @@ AWS_PROFILE=beacon-prod terraform init -backend-config=backend.hcl
 AWS_PROFILE=beacon-prod terraform plan -out=tfplan
 AWS_PROFILE=beacon-prod terraform apply tfplan
 AWS_PROFILE=beacon-prod terraform output -raw passcode_endpoint
+```
+
+Website files live in `../../website`. After publishing a time-sensitive update, invalidate the CloudFront cache with the managed distribution output:
+
+```sh
+AWS_PROFILE=beacon-prod aws cloudfront create-invalidation \
+  --distribution-id "$(AWS_PROFILE=beacon-prod terraform output -raw website_cloudfront_distribution_id)" \
+  --paths '/*'
 ```
 
 The GitHub Actions workflow in `.github/workflows/fcc-callsign-import.yml` runs each Sunday at 18:00 UTC and can also be started manually. It uses GitHub OIDC to assume a repository-and-branch-restricted AWS role; no long-lived AWS key or GitHub secret is required.

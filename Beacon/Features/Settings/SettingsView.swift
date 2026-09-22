@@ -12,11 +12,36 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
+                    if model.isDemoMode {
+                        Button {
+                            model.exitDemoMode()
+                        } label: {
+                            Label("Exit Demo and Set Up Callsign", systemImage: "person.badge.key.fill")
+                        }
+                    } else {
+                        Button {
+                            dismissKeyboard()
+                            Task {
+                                await model.enterDemoMode()
+                                showMap()
+                            }
+                        } label: {
+                            Label("Explore Demo", systemImage: "map.fill")
+                        }
+                    }
+                } header: {
+                    Text("Demo Mode")
+                } footer: {
+                    Text("Demo Mode uses simulated stations and disables all transmission.")
+                }
+
+                Section {
                     LabeledContent("Call Sign") {
                         TextField("Required", text: $model.settings.identity.callsign)
                             .multilineTextAlignment(.trailing)
                             .textInputAutocapitalization(.characters)
                             .autocorrectionDisabled()
+                            .disabled(model.isDemoMode)
                     }
 
                     LabeledContent {
@@ -33,6 +58,7 @@ struct SettingsView: View {
                         }
                         .pickerStyle(.menu)
                         .labelsHidden()
+                        .disabled(model.isDemoMode)
                     } label: {
                         HStack(spacing: 5) {
                             Text("SSID")
@@ -68,6 +94,7 @@ struct SettingsView: View {
                                     .accessibilityLabel("Reveal passcode")
                                     .accessibilityHint("Press and hold to show the entered passcode")
                             }
+                            .disabled(model.isDemoMode)
                     } label: {
                         HStack(spacing: 5) {
                             Text("Passcode")
@@ -84,16 +111,33 @@ struct SettingsView: View {
                     } label: {
                         Label("Request a passcode", systemImage: "key.horizontal")
                     }
-                    .disabled(AmateurCallsignValidator.normalizedBase(from: model.settings.identity.callsign) == nil)
+                    .disabled(
+                        model.isDemoMode
+                            || AmateurCallsignValidator.normalizedBase(from: model.settings.identity.callsign) == nil
+                    )
 
-                    if !model.settings.identity.callsign.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    if model.isDemoMode {
+                        Button {
+                            model.exitDemoMode()
+                        } label: {
+                            Label(
+                                "Exit Demo Mode to configure your callsign",
+                                systemImage: "lock.open.fill"
+                            )
+                        }
+                    }
+
+                    if !model.isDemoMode,
+                       !model.settings.identity.callsign.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                        AmateurCallsignValidator.normalizedBase(from: model.settings.identity.callsign) == nil {
                         Label("Enter a valid amateur-radio call sign.", systemImage: "exclamationmark.triangle.fill")
                             .font(.caption)
                             .foregroundStyle(.red)
                     }
 
-                    if model.settings.identity.isReady, !model.isAPRSISPasscodeValid {
+                    if !model.isDemoMode,
+                       model.settings.identity.isReady,
+                       !model.isAPRSISPasscodeValid {
                         Label("Passcode does not match this call sign.", systemImage: "exclamationmark.triangle.fill")
                             .font(.caption)
                             .foregroundStyle(.red)
@@ -101,7 +145,9 @@ struct SettingsView: View {
                 } header: {
                     Text("Amateur identity")
                 } footer: {
-                    Text("APRS-IS is for licensed amateur-radio use. Your passcode stays on this device.")
+                    Text(model.isDemoMode
+                         ? "Identity settings are locked while using simulated demo data."
+                         : "APRS-IS is for licensed amateur-radio use. Your passcode stays on this device.")
                 }
 
                 Section("Beaconing") {

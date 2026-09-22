@@ -7,6 +7,12 @@ import Observation
 final class AppModel {
     static let beaconNowCooldown: TimeInterval = 10
 
+    enum ExperienceMode: String {
+        case undecided
+        case demo
+        case live
+    }
+
     struct APRSDiagnosticEntry: Identifiable {
         let id = UUID()
         let timestamp: Date
@@ -50,6 +56,7 @@ final class AppModel {
     }
 
     var settings = AppSettings.load()
+    var experienceMode: ExperienceMode = .undecided
     var connectionState: ConnectionState = .disconnected
     var isBeaconing = false
     var lastBeaconAt: Date?
@@ -65,7 +72,16 @@ final class AppModel {
     var trail: [CLLocationCoordinate2D] = []
     var selectedStation: APRSStation?
 
+    var isDemoMode: Bool { experienceMode == .demo }
+
+    var displayCoordinate: CLLocationCoordinate2D? {
+        isDemoMode ? Self.demoCenterCoordinate : locationService.currentLocation?.coordinate
+    }
+
     var stationsWithinRadius: [APRSStation] {
+        if isDemoMode {
+            return Self.demoStations(centeredAt: Self.demoCenterCoordinate)
+        }
         guard let currentLocation = locationService.currentLocation else { return stations }
         let radiusMeters = Double(settings.server.filterRadiusKilometers) * 1_000
         return stations.filter { station in
@@ -106,6 +122,10 @@ final class AppModel {
     private var lastManualBeaconAttemptAt: Date?
 
     init() {
+        experienceMode = Self.initialExperienceMode(
+            storedValue: UserDefaults.standard.string(forKey: Self.experienceModeStorageKey),
+            hasConfiguredIdentity: settings.identity.isReady
+        )
         locationService.onLocation = { [weak self] location in
             Task { @MainActor in
                 await self?.received(location)
@@ -114,6 +134,10 @@ final class AppModel {
     }
 
     func startBeaconing() async {
+        guard !isDemoMode else {
+            beaconAlertMessage = "Transmitting is disabled in Demo Mode. Set up your own call sign and APRS-IS passcode first."
+            return
+        }
         guard settings.identity.isReady else {
             let message = "Add your amateur call sign and APRS-IS passcode in Settings."
             lastBeaconError = message
@@ -152,6 +176,10 @@ final class AppModel {
 
     func beaconNow() async {
         beaconAlertMessage = nil
+        guard !isDemoMode else {
+            beaconAlertMessage = "Transmitting is disabled in Demo Mode. Set up your own call sign and APRS-IS passcode first."
+            return
+        }
         guard settings.identity.isReady else {
             beaconAlertMessage = "Add your amateur call sign and APRS-IS passcode in Settings first."
             return
@@ -204,6 +232,7 @@ final class AppModel {
     }
 
     func startReceiving() async {
+        guard experienceMode == .live else { return }
         guard settings.identity.isReady else { return }
         guard let location = locationService.currentLocation else { return }
         if let existingClient = client,
@@ -236,8 +265,30 @@ final class AppModel {
     }
 
     func appDidBecomeActive() async {
+        guard experienceMode == .live else {
+            locationService.stop()
+            return
+        }
         locationService.start(background: isBeaconing)
         await startReceiving()
+    }
+
+    func enterDemoMode() async {
+        await stopNetworkActivity()
+        experienceMode = .demo
+        persistExperienceMode()
+    }
+
+    func exitDemoMode() {
+        experienceMode = .live
+        persistExperienceMode()
+        beginLiveLocationSetup()
+    }
+
+    func chooseLiveSetup() {
+        experienceMode = .live
+        persistExperienceMode()
+        beginLiveLocationSetup()
     }
 
     func reconnectAPRSIS() async {
@@ -285,6 +336,7 @@ final class AppModel {
     }
 
     private func connectIfNeeded() async {
+        guard experienceMode == .live else { return }
         guard client == nil else { return }
         connectionState = .connecting
 
@@ -336,6 +388,7 @@ final class AppModel {
     }
 
     private func received(_ location: CLLocation) async {
+        guard experienceMode == .live else { return }
         if settings.identity.isReady {
             await connectIfNeeded()
         }
@@ -360,6 +413,10 @@ final class AppModel {
     }
 
     private func sendBeacon(at location: CLLocation) async {
+        guard !isDemoMode else {
+            beaconAlertMessage = "Transmitting is disabled in Demo Mode."
+            return
+        }
         guard isAPRSISPasscodeValid else {
             disableTransmittingForInvalidPasscode()
             return
@@ -398,8 +455,84 @@ final class AppModel {
         beaconTask = nil
         lastBeaconError = invalidPasscodeMessage
         beaconAlertMessage = invalidPasscodeMessage
+        if experienceMode == .live {
+            locationService.stop()
+            locationService.start(background: false)
+        } else {
+            locationService.stop()
+        }
+    }
+
+    private func stopNetworkActivity() async {
+        isBeaconing = false
+        nextBeaconAt = nil
+        beaconTask?.cancel()
+        beaconTask = nil
         locationService.stop()
+        let previousClient = client
+        client = nil
+        clientIdentity = nil
+        clientServer = nil
+        if let previousClient {
+            await previousClient.disconnect()
+        }
+        connectionState = .disconnected
+    }
+
+    private func persistExperienceMode() {
+        UserDefaults.standard.set(experienceMode.rawValue, forKey: Self.experienceModeStorageKey)
+    }
+
+    private func beginLiveLocationSetup() {
+        locationService.requestAlwaysPermission()
         locationService.start(background: false)
+    }
+
+    static func initialExperienceMode(
+        storedValue: String?,
+        hasConfiguredIdentity: Bool
+    ) -> ExperienceMode {
+        if let storedValue, let storedMode = ExperienceMode(rawValue: storedValue) {
+            return storedMode
+        }
+        return hasConfiguredIdentity ? .live : .undecided
+    }
+
+    private static let experienceModeStorageKey = "app.experienceMode.v1"
+    nonisolated static let demoCenterCoordinate = CLLocationCoordinate2D(
+        latitude: 33.8003,
+        longitude: -117.8827
+    )
+
+    private static func demoStations(centeredAt center: CLLocationCoordinate2D) -> [APRSStation] {
+        let samples: [(String, Double, Double, Character, String, Double?, Double?)] = [
+            ("N0DEMO-1", 0.030, -0.035, ">", "Simulated mobile station", 54, 13.4),
+            ("N0DEMO-2", -0.045, 0.025, "[", "Simulated pedestrian station", 210, 1.5),
+            ("N0DEMO-3", 0.070, 0.055, "R", "Simulated recreational vehicle", 128, 22.0),
+            ("N0DEMO-4", -0.090, -0.060, "-", "Simulated home station", nil, nil),
+            ("N0DEMO-5", 0.115, -0.025, "_", "Simulated weather station", nil, nil),
+            ("N0DEMO-6", -0.130, 0.090, "k", "Simulated utility vehicle", 312, 17.0),
+            ("N0DEMO-7", 0.155, 0.035, "Y", "Simulated sailboat", 185, 4.2),
+            ("N0DEMO-8", -0.175, -0.110, "O", "Simulated balloon", 45, 8.0)
+        ]
+
+        return samples.enumerated().map { index, sample in
+            APRSStation(
+                callsign: sample.0,
+                coordinate: CLLocationCoordinate2D(
+                    latitude: center.latitude + sample.1,
+                    longitude: center.longitude + sample.2
+                ),
+                lastHeard: Date().addingTimeInterval(TimeInterval(-30 * index)),
+                comment: sample.4,
+                symbolTable: "/",
+                symbol: sample.3,
+                course: sample.5,
+                speedMetersPerSecond: sample.6,
+                altitudeMeters: index == 7 ? 1_250 : nil,
+                equipment: "Beacon 73 Demo"
+            )
+        }
     }
 
     private func upsert(_ station: APRSStation) {

@@ -23,7 +23,7 @@ struct StationsView: View {
                 } else {
                     List(model.nearbyStations) { station in
                         NavigationLink {
-                            StationDetailView(station: station, from: model.locationService.currentLocation?.coordinate)
+                            StationDetailView(station: station, from: model.displayCoordinate)
                         } label: {
                             HStack(spacing: 12) {
                                 APRSSymbolIcon(

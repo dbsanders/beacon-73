@@ -1,6 +1,10 @@
 import CoreLocation
 import Foundation
 
+enum APRSApplicationIdentity {
+    static let tocall = "APB730"
+}
+
 struct APRSPacket: Equatable {
     let source: String
     let destination: String
@@ -19,7 +23,12 @@ struct APRSPacket: Equatable {
         let longitude = aprsCoordinate(location.coordinate.longitude, positive: "E", negative: "W", degreeDigits: 3)
         let selection = APRSSymbolCatalog.selection(from: symbol)
         let information = "!\(latitude)\(selection.table.rawValue)\(longitude)\(selection.code)\(courseAndSpeed(location))\(comment)"
-        return APRSPacket(source: callsign, destination: "APRS", path: "TCPIP*", information: information)
+        return APRSPacket(
+            source: callsign,
+            destination: APRSApplicationIdentity.tocall,
+            path: "TCPIP*",
+            information: information
+        )
     }
 
     private static func aprsCoordinate(

@@ -26,6 +26,18 @@ variable "environment" {
   }
 }
 
+variable "website_domain_name" {
+  description = "Primary public domain for the Beacon 73 website."
+  type        = string
+  default     = "beacon73.com"
+}
+
+variable "website_custom_domain_enabled" {
+  description = "Whether CloudFront serves the website on its public domain aliases."
+  type        = bool
+  default     = true
+}
+
 variable "rate_limit_requests" {
   description = "Maximum successful attempts per source IP in each fixed window."
   type        = number

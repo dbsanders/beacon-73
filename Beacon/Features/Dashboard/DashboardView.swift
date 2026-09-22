@@ -7,17 +7,19 @@ struct DashboardView: View {
     @State private var visibleMapRegion = MKCoordinateRegion.preview
     @State private var expandedMapPosition: MapCameraPosition = .region(.preview)
     @State private var expandedMapRegion = MKCoordinateRegion.preview
+    @State private var expandedMapRegionBeforeStationDetail: MKCoordinateRegion?
     @State private var didCenterOnUser = false
     @State private var isShowingExpandedMap = false
     let showSettings: () -> Void
 
     private var userCoordinate: CLLocationCoordinate2D {
-        model.locationService.currentLocation?.coordinate ?? .preview
+        model.displayCoordinate ?? .preview
     }
 
     var body: some View {
         GeometryReader { geometry in
             let isLandscape = geometry.size.width > geometry.size.height
+            let portraitMapHeight = DashboardLayout.mapHeight(for: geometry.size)
 
             NavigationStack {
                 Group {
@@ -27,8 +29,8 @@ struct DashboardView: View {
                         ScrollView {
                             LazyVStack(spacing: 12) {
                                 dashboardHeader
-                                compactMap
-                                BeaconControlCard()
+                                compactMap(height: portraitMapHeight)
+                                BeaconControlCard(showSettings: showSettings)
                                 beaconNowButton
                                 TelemetryGrid()
                             }
@@ -40,7 +42,7 @@ struct DashboardView: View {
                 }
                 .toolbar(.hidden, for: .navigationBar)
                 .toolbar(isLandscape ? .hidden : .visible, for: .tabBar)
-                .sheet(item: Bindable(model).selectedStation) { station in
+                .sheet(item: Bindable(model).selectedStation, onDismiss: restoreExpandedMapAfterStationDetail) { station in
                     StationDetailView(station: station, from: userCoordinate)
                         .presentationDetents([.medium])
                 }
@@ -97,7 +99,7 @@ struct DashboardView: View {
                 .padding(.vertical, 5)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(remaining > 0)
+            .disabled(model.isDemoMode || remaining > 0)
             .accessibilityHint(
                 remaining > 0
                     ? "Available again in \(remaining) seconds"
@@ -106,9 +108,9 @@ struct DashboardView: View {
         }
     }
 
-    private var compactMap: some View {
+    private func compactMap(height: CGFloat) -> some View {
         aprsMap(position: $mapPosition, visibleRegion: $visibleMapRegion, centersOnUser: true)
-            .frame(height: 225)
+            .frame(height: height)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay(alignment: .topLeading) {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
@@ -173,66 +175,95 @@ struct DashboardView: View {
         visibleRegion: Binding<MKCoordinateRegion>,
         centersOnUser: Bool
     ) -> some View {
-        Map(position: position, selection: Binding(
-            get: { model.selectedStation?.id },
-            set: { id in model.selectedStation = model.nearbyStations.first { $0.id == id } }
-        )) {
-            Annotation(
-                "",
-                coordinate: userCoordinate
-            ) {
-                APRSSymbolMapMarker(
-                    symbol: APRSSymbolCatalog.selection(from: model.settings.beaconing.symbol),
-                    callsign: model.settings.identity.fullCallsign,
-                    isActive: model.isBeaconing
-                )
-            }
+        GeometryReader { geometry in
+            let region = visibleRegion.wrappedValue
+            let visibleStationCount = StationAnnotationLayout.visibleStationCount(
+                in: region,
+                stations: model.nearbyStations
+            )
+            let usesCompactMarkers = StationAnnotationLayout.isCompact(
+                latitudeDelta: region.span.latitudeDelta,
+                viewportSize: geometry.size,
+                visibleStationCount: visibleStationCount
+            )
 
-            ForEach(model.nearbyStations) { station in
-                Annotation("", coordinate: station.coordinate, anchor: .bottom) {
-                    APRSSymbolMapMarker(
-                        symbol: station.symbolSelection,
-                        overlay: station.symbolOverlay,
-                        callsign: station.callsign,
-                        isActive: false,
-                        isCompact: visibleRegion.wrappedValue.span.latitudeDelta > 0.012
-                    )
+            Map(position: position, selection: Binding(
+                get: { model.selectedStation?.id },
+                set: { id in
+                    if id != nil, model.selectedStation == nil, isShowingExpandedMap {
+                        expandedMapRegionBeforeStationDetail = expandedMapRegion
+                    }
+                    model.selectedStation = model.nearbyStations.first { $0.id == id }
                 }
-                .tag(station.id)
-            }
+            )) {
+                if !model.isDemoMode {
+                    Annotation(
+                        "",
+                        coordinate: userCoordinate
+                    ) {
+                        APRSSymbolMapMarker(
+                            symbol: APRSSymbolCatalog.selection(from: model.settings.beaconing.symbol),
+                            callsign: model.settings.identity.fullCallsign,
+                            isActive: model.isBeaconing
+                        )
+                    }
+                }
 
-        }
-        .mapStyle(.standard(elevation: .flat, emphasis: .muted))
-        .mapControls {
-            MapCompass()
-            MapUserLocationButton()
-        }
-        .onAppear {
-            if centersOnUser { centerOnUserIfAvailable() }
-        }
-        .onChange(of: model.locationService.currentLocation?.timestamp) { _, _ in
-            if centersOnUser { centerOnUserIfAvailable() }
-        }
-        .onMapCameraChange(frequency: .onEnd) { context in
-            visibleRegion.wrappedValue = context.region
+                ForEach(model.nearbyStations) { station in
+                    Annotation("", coordinate: station.coordinate, anchor: .bottom) {
+                        APRSSymbolMapMarker(
+                            symbol: station.symbolSelection,
+                            overlay: station.symbolOverlay,
+                            callsign: station.callsign,
+                            isActive: false,
+                            isCompact: usesCompactMarkers
+                        )
+                    }
+                    .tag(station.id)
+                }
+
+            }
+            .mapStyle(.standard(elevation: .flat, emphasis: .muted))
+            .mapControls {
+                MapCompass()
+                MapUserLocationButton()
+            }
+            .onAppear {
+                if centersOnUser { centerOnUserIfAvailable() }
+            }
+            .onChange(of: model.locationService.currentLocation?.timestamp) { _, _ in
+                if centersOnUser { centerOnUserIfAvailable() }
+            }
+            .onChange(of: model.settings.server.filterRadiusKilometers) { _, _ in
+                if centersOnUser { resetMapToNearbyStationRadius() }
+            }
+            .onMapCameraChange(frequency: .continuous) { context in
+                visibleRegion.wrappedValue = context.region
+            }
         }
     }
 
     private func centerOnUserIfAvailable() {
-        guard !didCenterOnUser, model.locationService.currentLocation != nil else { return }
-        let region = MKCoordinateRegion(
+        guard !didCenterOnUser,
+              model.locationService.currentLocation != nil || model.isDemoMode else { return }
+        resetMapToNearbyStationRadius()
+        didCenterOnUser = true
+    }
+
+    private func resetMapToNearbyStationRadius() {
+        guard model.locationService.currentLocation != nil || model.isDemoMode else { return }
+        let region = NearbyStationMapLayout.defaultRegion(
             center: userCoordinate,
-            latitudinalMeters: 2_500,
-            longitudinalMeters: 2_500
+            radiusKilometers: model.settings.server.filterRadiusKilometers
         )
         visibleMapRegion = region
         mapPosition = .region(region)
-        didCenterOnUser = true
     }
 
     private func showExpandedMap() {
         expandedMapRegion = visibleMapRegion
         expandedMapPosition = .region(visibleMapRegion)
+        expandedMapRegionBeforeStationDetail = nil
         isShowingExpandedMap = true
     }
 
@@ -242,6 +273,21 @@ struct DashboardView: View {
         isShowingExpandedMap = false
     }
 
+    private func restoreExpandedMapAfterStationDetail() {
+        guard isShowingExpandedMap,
+              let savedRegion = expandedMapRegionBeforeStationDetail else { return }
+        expandedMapRegion = savedRegion
+        expandedMapPosition = .region(savedRegion)
+        expandedMapRegionBeforeStationDetail = nil
+    }
+
+}
+
+enum DashboardLayout {
+    static func mapHeight(for viewportSize: CGSize) -> CGFloat {
+        guard viewportSize.width >= 700 else { return 225 }
+        return min(max(viewportSize.height * 0.46, 360), 640)
+    }
 }
 
 private struct APRSConnectionIndicator: View {
@@ -255,13 +301,19 @@ private struct APRSConnectionIndicator: View {
 
             HStack(spacing: 5) {
                 Circle()
-                    .fill(isTransmitting ? .orange : (model.connectionState.isConnected ? .green : .secondary))
+                    .fill(model.isDemoMode
+                          ? .orange
+                          : (isTransmitting ? .orange : (model.connectionState.isConnected ? .green : .secondary)))
                     .frame(width: 8, height: 8)
-                Text(isTransmitting ? "APRS TX" : model.connectionState.shortLabel)
+                Text(model.isDemoMode
+                     ? "Demo"
+                     : (isTransmitting ? "APRS TX" : model.connectionState.shortLabel))
                     .font(.caption.weight(.medium))
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(isTransmitting ? "APRS transmitting" : model.connectionState.shortLabel)
+            .accessibilityLabel(model.isDemoMode
+                                ? "Demo Mode"
+                                : (isTransmitting ? "APRS transmitting" : model.connectionState.shortLabel))
         }
     }
 }
@@ -269,28 +321,52 @@ private struct APRSConnectionIndicator: View {
 private struct BeaconControlCard: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let showSettings: () -> Void
 
-    private var callsign: String {
-        model.settings.identity.fullCallsign.isEmpty ? "Set your callsign" : model.settings.identity.fullCallsign
+    private var hasCallsign: Bool {
+        !model.settings.identity.fullCallsign.isEmpty
     }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !model.isBeaconing || reduceMotion)) { timeline in
             let pulse = glowIntensity(at: timeline.date)
 
-            Toggle(isOn: Binding(
-                get: { model.isBeaconing },
-                set: { _ in Task { await model.toggleBeaconing() } }
-            )) {
+            HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(callsign)
-                        .font(.title2.bold().monospaced())
-                    Text(model.isBeaconing ? "Auto-beaconing is ON" : "Auto-beaconing is off")
+                    if model.isDemoMode {
+                        Text("DEMO")
+                            .font(.title2.bold().monospaced())
+                    } else if hasCallsign {
+                        Text(model.settings.identity.fullCallsign)
+                            .font(.title2.bold().monospaced())
+                    } else {
+                        Button(action: showSettings) {
+                            HStack(spacing: 5) {
+                                Text("Set your callsign")
+                                Image(systemName: "chevron.right")
+                                    .font(.subheadline.bold())
+                            }
+                            .font(.title2.bold())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.blue)
+                        .accessibilityHint("Opens amateur identity settings")
+                    }
+                    Text(model.isDemoMode
+                         ? "Transmitting is disabled"
+                         : (model.isBeaconing ? "Auto-beaconing is ON" : "Auto-beaconing is off"))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+                Spacer()
+                Toggle("Auto-beaconing", isOn: Binding(
+                    get: { model.isBeaconing },
+                    set: { _ in Task { await model.toggleBeaconing() } }
+                ))
+                .labelsHidden()
+                .tint(.green)
+                .disabled(model.isDemoMode || !hasCallsign)
             }
-            .tint(.green)
             .padding(16)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay {
@@ -372,7 +448,7 @@ struct TrackView: View {
     @Environment(AppModel.self) private var model
 
     private var fallback: CLLocationCoordinate2D {
-        model.locationService.currentLocation?.coordinate ?? .preview
+        model.displayCoordinate ?? .preview
     }
 
     var body: some View {
@@ -405,6 +481,64 @@ struct TrackView: View {
 
     private var region: MKCoordinateRegion {
         MKCoordinateRegion(center: model.trail.last ?? fallback, latitudinalMeters: 10_000, longitudinalMeters: 10_000)
+    }
+}
+
+enum StationAnnotationLayout {
+    private static let metersPerDegreeLatitude = 111_000.0
+    private static let pointsPerFullMarker = 30_000.0
+
+    static func isCompact(
+        latitudeDelta: CLLocationDegrees,
+        viewportSize: CGSize,
+        visibleStationCount: Int
+    ) -> Bool {
+        let spanMeters = latitudeDelta * metersPerDegreeLatitude
+        return spanMeters > maximumFullMarkerSpan(for: viewportSize)
+            || visibleStationCount > fullMarkerCapacity(for: viewportSize)
+    }
+
+    static func maximumFullMarkerSpan(for viewportSize: CGSize) -> CLLocationDistance {
+        switch min(viewportSize.width, viewportSize.height) {
+        case ..<350: 80_000
+        case ..<600: 160_000
+        default: 1_000_000
+        }
+    }
+
+    static func fullMarkerCapacity(for viewportSize: CGSize) -> Int {
+        let area = max(0, viewportSize.width * viewportSize.height)
+        return min(60, max(4, Int(area / pointsPerFullMarker)))
+    }
+
+    static func visibleStationCount(
+        in region: MKCoordinateRegion,
+        stations: [APRSStation]
+    ) -> Int {
+        let halfLatitude = region.span.latitudeDelta / 2
+        let halfLongitude = region.span.longitudeDelta / 2
+        return stations.count { station in
+            abs(station.coordinate.latitude - region.center.latitude) <= halfLatitude
+                && abs(station.coordinate.longitude - region.center.longitude) <= halfLongitude
+        }
+    }
+}
+
+enum NearbyStationMapLayout {
+    static func defaultSpanMeters(radiusKilometers: Int) -> CLLocationDistance {
+        Double(radiusKilometers) * 2_000
+    }
+
+    static func defaultRegion(
+        center: CLLocationCoordinate2D,
+        radiusKilometers: Int
+    ) -> MKCoordinateRegion {
+        let spanMeters = defaultSpanMeters(radiusKilometers: radiusKilometers)
+        return MKCoordinateRegion(
+            center: center,
+            latitudinalMeters: spanMeters,
+            longitudinalMeters: spanMeters
+        )
     }
 }
 
@@ -452,5 +586,5 @@ private extension MKCoordinateRegion {
 }
 
 private extension CLLocationCoordinate2D {
-    static let preview = CLLocationCoordinate2D(latitude: 33.7089, longitude: -117.7641)
+    static let preview = AppModel.demoCenterCoordinate
 }

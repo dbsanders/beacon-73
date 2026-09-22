@@ -32,3 +32,34 @@ output "dynamodb_table_name" {
   description = "Table containing expiring rate-limit and attestation records."
   value       = aws_dynamodb_table.requests.name
 }
+
+output "website_bucket_name" {
+  description = "Private S3 bucket containing the Beacon 73 website."
+  value       = aws_s3_bucket.site.id
+}
+
+output "website_cloudfront_distribution_id" {
+  description = "CloudFront distribution serving the Beacon 73 website."
+  value       = aws_cloudfront_distribution.site.id
+}
+
+output "website_cloudfront_domain_name" {
+  description = "CloudFront hostname behind the Beacon 73 public domain."
+  value       = aws_cloudfront_distribution.site.domain_name
+}
+
+output "website_certificate_arn" {
+  description = "ACM certificate used by the Beacon 73 website."
+  value       = aws_acm_certificate.site.arn
+}
+
+output "website_certificate_validation_records" {
+  description = "DNS records required to validate the website certificate."
+  value = {
+    for option in aws_acm_certificate.site.domain_validation_options : option.domain_name => {
+      name  = option.resource_record_name
+      type  = option.resource_record_type
+      value = option.resource_record_value
+    }
+  }
+}

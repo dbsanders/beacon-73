@@ -3,6 +3,36 @@ import XCTest
 @testable import Beacon
 
 final class BeaconCoreTests: XCTestCase {
+    @MainActor
+    func testFirstLaunchExperienceChoice() {
+        XCTAssertEqual(
+            AppModel.initialExperienceMode(storedValue: nil, hasConfiguredIdentity: false),
+            .undecided
+        )
+        XCTAssertEqual(
+            AppModel.initialExperienceMode(storedValue: nil, hasConfiguredIdentity: true),
+            .live
+        )
+        XCTAssertEqual(
+            AppModel.initialExperienceMode(storedValue: "demo", hasConfiguredIdentity: true),
+            .demo
+        )
+    }
+
+    @MainActor
+    func testDemoModeNeverUsesTheDeviceLocation() {
+        let model = AppModel()
+        model.experienceMode = .demo
+        model.locationService.currentLocation = CLLocation(
+            latitude: 33.7089,
+            longitude: -117.7641
+        )
+
+        let coordinate = model.displayCoordinate!
+        XCTAssertEqual(coordinate.latitude, 33.8003, accuracy: 0.000_001)
+        XCTAssertEqual(coordinate.longitude, -117.8827, accuracy: 0.000_001)
+    }
+
     func testInternationalAmateurCallsignValidation() {
         for callsign in ["K6BAT", "W1AW", "VE3ABC", "DL1ABC", "2E0ABC", "3DA0RS"] {
             XCTAssertNotNil(AmateurCallsignValidator.normalizedBase(from: callsign), callsign)
@@ -83,6 +113,57 @@ final class BeaconCoreTests: XCTestCase {
         customized.beaconing.comment = "Mobile station"
         AppSettings.migrateLegacyValues(in: &customized)
         XCTAssertEqual(customized.beaconing.comment, "Mobile station")
+    }
+
+    func testStationAnnotationDeclutteringAdaptsToScreenSizeAndDensity() {
+        let compactPhone = CGSize(width: 320, height: 568)
+        let standardPhone = CGSize(width: 393, height: 852)
+        let tablet = CGSize(width: 820, height: 1_180)
+
+        XCTAssertTrue(StationAnnotationLayout.isCompact(
+            latitudeDelta: 100_000 / 111_000,
+            viewportSize: compactPhone,
+            visibleStationCount: 8
+        ))
+        XCTAssertFalse(StationAnnotationLayout.isCompact(
+            latitudeDelta: 100_000 / 111_000,
+            viewportSize: standardPhone,
+            visibleStationCount: 8
+        ))
+        XCTAssertTrue(StationAnnotationLayout.isCompact(
+            latitudeDelta: 100_000 / 111_000,
+            viewportSize: standardPhone,
+            visibleStationCount: 12
+        ))
+        XCTAssertFalse(StationAnnotationLayout.isCompact(
+            latitudeDelta: 500_000 / 111_000,
+            viewportSize: tablet,
+            visibleStationCount: 30
+        ))
+    }
+
+    func testDefaultMapSpanIncludesTheConfiguredStationRadius() {
+        XCTAssertEqual(
+            NearbyStationMapLayout.defaultSpanMeters(radiusKilometers: 80),
+            160_000
+        )
+    }
+
+    func testDashboardMapUsesAvailableIPadHeight() {
+        XCTAssertEqual(
+            DashboardLayout.mapHeight(for: CGSize(width: 393, height: 852)),
+            225
+        )
+        XCTAssertEqual(
+            DashboardLayout.mapHeight(for: CGSize(width: 820, height: 1_180)),
+            542.8,
+            accuracy: 0.01
+        )
+        XCTAssertEqual(
+            DashboardLayout.mapHeight(for: CGSize(width: 1_024, height: 1_366)),
+            628.36,
+            accuracy: 0.01
+        )
     }
 
     @MainActor
@@ -224,7 +305,8 @@ final class BeaconCoreTests: XCTestCase {
         let packet = APRSPacket.position(callsign: "K6BAT-5", location: location, symbol: "/>", comment: "Beacon")
 
         XCTAssertEqual(packet.source, "K6BAT-5")
-        XCTAssertTrue(packet.tnc2.hasPrefix("K6BAT-5>APRS,TCPIP*:!3342.53N/11745.84W>128/030"))
+        XCTAssertEqual(packet.destination, "APB730")
+        XCTAssertTrue(packet.tnc2.hasPrefix("K6BAT-5>APB730,TCPIP*:!3342.53N/11745.84W>128/030"))
         XCTAssertTrue(packet.tnc2.hasSuffix("Beacon"))
     }
 
