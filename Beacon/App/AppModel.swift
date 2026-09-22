@@ -114,6 +114,7 @@ final class AppModel {
 
     let locationService = LocationService()
     private let smartBeaconing = SmartBeaconingPolicy()
+    private let liveActivityController = BeaconLiveActivityController()
     private var client: APRSISClient?
     private var clientIdentity: AppSettings.Identity?
     private var clientServer: AppSettings.Server?
@@ -154,6 +155,7 @@ final class AppModel {
         locationService.start(background: true)
         await startReceiving()
         scheduleStatusRefresh()
+        await liveActivityController.start(with: liveActivityState())
 
         if let location = locationService.currentLocation {
             await sendBeacon(at: location)
@@ -168,6 +170,7 @@ final class AppModel {
         locationService.stop()
         locationService.start(background: false)
         await startReceiving()
+        await endLiveActivity()
     }
 
     func toggleBeaconing() async {
@@ -374,6 +377,8 @@ final class AppModel {
                 }
                 if state == .unverified {
                     self.disableTransmittingForInvalidPasscode()
+                } else if self.isBeaconing {
+                    await self.updateLiveActivity()
                 }
             }
         }
@@ -409,6 +414,7 @@ final class AppModel {
             configuration: settings.beaconing
         )
         nextBeaconAt = decision.nextBeaconAt
+        await updateLiveActivity()
         if decision.shouldBeacon { await sendBeacon(at: location) }
     }
 
@@ -446,6 +452,7 @@ final class AppModel {
         } catch {
             lastBeaconError = error.localizedDescription
         }
+        await updateLiveActivity()
     }
 
     private func disableTransmittingForInvalidPasscode() {
@@ -460,6 +467,9 @@ final class AppModel {
             locationService.start(background: false)
         } else {
             locationService.stop()
+        }
+        Task { [weak self] in
+            await self?.endLiveActivity()
         }
     }
 
@@ -477,6 +487,7 @@ final class AppModel {
             await previousClient.disconnect()
         }
         connectionState = .disconnected
+        await endLiveActivity()
     }
 
     private func persistExperienceMode() {
@@ -566,9 +577,42 @@ final class AppModel {
                     configuration: self.settings.beaconing
                 )
                 self.nextBeaconAt = decision.nextBeaconAt
+                await self.updateLiveActivity()
                 if decision.shouldBeacon { await self.sendBeacon(at: current) }
             }
         }
+    }
+
+    private func updateLiveActivity() async {
+        guard isBeaconing else { return }
+        await liveActivityController.update(with: liveActivityState())
+    }
+
+    private func endLiveActivity() async {
+        await liveActivityController.end(with: liveActivityState(statusOverride: "Stopped"))
+    }
+
+    private func liveActivityState(
+        statusOverride: String? = nil
+    ) -> BeaconActivityAttributes.ContentState {
+        let isReady = connectionState == .connected(verified: true)
+        let currentStatus: String = switch connectionState {
+        case .connected(true): "Online"
+        case .connected(false): "Verifying"
+        case .unverified: "Passcode issue"
+        case .failed: "Connection issue"
+        case .connecting: "Connecting"
+        case .disconnected: "Offline"
+        }
+        let status = statusOverride ?? currentStatus
+
+        return BeaconActivityAttributes.ContentState(
+            callsign: settings.identity.fullCallsign,
+            connectionStatus: status,
+            isConnected: isReady,
+            lastBeaconAt: lastBeaconAt,
+            nextBeaconAt: nextBeaconAt
+        )
     }
 }
 

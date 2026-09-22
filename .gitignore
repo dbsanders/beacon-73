@@ -6,6 +6,7 @@
 # Xcode-generated files
 DerivedData/
 build/
+/work/
 *.xcuserstate
 xcuserdata/
 *.xccheckout
