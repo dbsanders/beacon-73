@@ -458,6 +458,18 @@ struct TrackView: View {
                     MapPolyline(coordinates: model.trail)
                         .stroke(.blue, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
                 }
+
+                ForEach(Array(model.trail.enumerated()), id: \.offset) { index, coordinate in
+                    Annotation("", coordinate: coordinate) {
+                        Circle()
+                            .fill(.orange)
+                            .frame(width: 11, height: 11)
+                            .overlay(Circle().stroke(.white, lineWidth: 2))
+                            .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+                            .accessibilityLabel("Beacon \(index + 1)")
+                    }
+                }
+
                 Marker(
                     model.trail.isEmpty ? "Current Position" : "Latest Beacon",
                     coordinate: model.trail.last ?? fallback
