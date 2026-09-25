@@ -19,25 +19,40 @@ struct DashboardView: View {
     var body: some View {
         GeometryReader { geometry in
             let isLandscape = geometry.size.width > geometry.size.height
-            let portraitMapHeight = DashboardLayout.mapHeight(for: geometry.size)
 
             NavigationStack {
                 Group {
                     if isLandscape {
                         landscapeMap
                     } else {
-                        ScrollView {
-                            LazyVStack(spacing: 12) {
-                                dashboardHeader
-                                compactMap(height: portraitMapHeight)
-                                BeaconControlCard(showSettings: showSettings)
-                                beaconNowButton
-                                TelemetryGrid()
+                        VStack(spacing: 12) {
+                            dashboardHeader
+                            DashboardCardLayout {
+                                compactMap(height: nil)
+                                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                                AutoBeaconButton(showSettings: showSettings)
+                                    .padding(.horizontal, 12)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                             }
-                            .padding(.horizontal, 14)
-                            .padding(.bottom, 12)
+                            .background(Color(uiColor: .secondarySystemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+                                    .allowsHitTesting(false)
+                            }
                         }
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 12)
                         .background(Color(uiColor: .systemBackground))
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            BeaconSummaryPanel()
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                                .padding(.horizontal, 14)
+                                .padding(.bottom, 8)
+                        }
                     }
                 }
                 .toolbar(.hidden, for: .navigationBar)
@@ -63,11 +78,18 @@ struct DashboardView: View {
 
     private var dashboardHeader: some View {
         HStack(alignment: .center, spacing: 9) {
-            HStack(spacing: 4) {
-                Text("Beacon").foregroundStyle(.primary)
-                Text("73").foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 4) {
+                    Text("Beacon").foregroundStyle(.primary)
+                    Text("73").foregroundStyle(.orange)
+                }
+                .font(.title.bold())
+                if !model.settings.identity.fullCallsign.isEmpty && !model.isDemoMode {
+                    Text(model.settings.identity.fullCallsign)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                }
             }
-            .font(.title.bold())
 
             Spacer()
 
@@ -84,34 +106,10 @@ struct DashboardView: View {
         .padding(.top, 6)
     }
 
-    private var beaconNowButton: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { timeline in
-            let remaining = model.beaconNowCooldownRemaining(at: timeline.date)
-            Button {
-                Task { await model.beaconNow() }
-            } label: {
-                Label(
-                    remaining > 0 ? "Send Beacon in \(remaining)s" : "Send Beacon Now",
-                    systemImage: "paperplane.fill"
-                )
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 5)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(model.isDemoMode || remaining > 0)
-            .accessibilityHint(
-                remaining > 0
-                    ? "Available again in \(remaining) seconds"
-                    : "Immediately sends your current position to APRS-IS"
-            )
-        }
-    }
-
-    private func compactMap(height: CGFloat) -> some View {
+    private func compactMap(height: CGFloat?) -> some View {
         aprsMap(position: $mapPosition, visibleRegion: $visibleMapRegion, centersOnUser: true)
             .frame(height: height)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipped()
             .overlay(alignment: .topLeading) {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                     .font(.caption.bold())
@@ -176,69 +174,76 @@ struct DashboardView: View {
         centersOnUser: Bool
     ) -> some View {
         GeometryReader { geometry in
-            let region = visibleRegion.wrappedValue
-            let visibleStationCount = StationAnnotationLayout.visibleStationCount(
-                in: region,
-                stations: model.nearbyStations
-            )
-            let usesCompactMarkers = StationAnnotationLayout.isCompact(
-                latitudeDelta: region.span.latitudeDelta,
-                viewportSize: geometry.size,
-                visibleStationCount: visibleStationCount
-            )
-
-            Map(position: position, selection: Binding(
-                get: { model.selectedStation?.id },
-                set: { id in
-                    if id != nil, model.selectedStation == nil, isShowingExpandedMap {
-                        expandedMapRegionBeforeStationDetail = expandedMapRegion
-                    }
-                    model.selectedStation = model.nearbyStations.first { $0.id == id }
+            MapReader { proxy in
+                // Reading the camera region refreshes projection when the map moves or zooms.
+                let _ = visibleRegion.wrappedValue
+                let candidates = model.nearbyStations.compactMap { station -> StationAnnotationLayout.Candidate? in
+                    guard let point = proxy.convert(station.coordinate, to: .local) else { return nil }
+                    return .init(id: station.id, point: point, fullSize: StationAnnotationLayout.markerSize(callsign: station.callsign))
                 }
-            )) {
-                if !model.isDemoMode {
-                    Annotation(
-                        "",
-                        coordinate: userCoordinate
-                    ) {
-                        APRSSymbolMapMarker(
-                            symbol: APRSSymbolCatalog.selection(from: model.settings.beaconing.symbol),
-                            callsign: model.settings.identity.fullCallsign,
-                            isActive: model.isBeaconing
-                        )
-                    }
-                }
+                let ownBounds: [CGRect] = !model.isDemoMode ? proxy.convert(userCoordinate, to: .local).map { point in
+                    let size = StationAnnotationLayout.markerSize(callsign: model.settings.identity.fullCallsign)
+                    return [CGRect(x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width, height: size.height)]
+                } ?? [] : []
+                let presentations = StationAnnotationLayout.presentations(
+                    candidates: candidates, viewport: CGRect(origin: .zero, size: geometry.size),
+                    reserved: ownBounds, selectedID: model.selectedStation?.id
+                )
 
-                ForEach(model.nearbyStations) { station in
-                    Annotation("", coordinate: station.coordinate, anchor: .bottom) {
-                        APRSSymbolMapMarker(
-                            symbol: station.symbolSelection,
-                            overlay: station.symbolOverlay,
-                            callsign: station.callsign,
-                            isActive: false,
-                            isCompact: usesCompactMarkers
-                        )
+                Map(position: position, selection: Binding(
+                    get: { model.selectedStation?.id },
+                    set: { id in
+                        if id != nil, model.selectedStation == nil, isShowingExpandedMap {
+                            expandedMapRegionBeforeStationDetail = expandedMapRegion
+                        }
+                        model.selectedStation = model.nearbyStations.first { $0.id == id }
                     }
-                    .tag(station.id)
-                }
+                )) {
+                    if !model.isDemoMode {
+                        Annotation(
+                            "",
+                            coordinate: userCoordinate
+                        ) {
+                            APRSSymbolMapMarker(
+                                symbol: APRSSymbolCatalog.selection(from: model.settings.beaconing.symbol),
+                                callsign: model.settings.identity.fullCallsign,
+                                isActive: model.isBeaconing
+                            )
+                        }
+                    }
 
-            }
-            .mapStyle(.standard(elevation: .flat, emphasis: .muted))
-            .mapControls {
-                MapCompass()
-                MapUserLocationButton()
-            }
-            .onAppear {
-                if centersOnUser { centerOnUserIfAvailable() }
-            }
-            .onChange(of: model.locationService.currentLocation?.timestamp) { _, _ in
-                if centersOnUser { centerOnUserIfAvailable() }
-            }
-            .onChange(of: model.settings.server.filterRadiusKilometers) { _, _ in
-                if centersOnUser { resetMapToNearbyStationRadius() }
-            }
-            .onMapCameraChange(frequency: .continuous) { context in
-                visibleRegion.wrappedValue = context.region
+                    ForEach(model.nearbyStations) { station in
+                        Annotation("", coordinate: station.coordinate, anchor: .bottom) {
+                            APRSSymbolMapMarker(
+                                symbol: station.symbolSelection,
+                                overlay: station.symbolOverlay,
+                                callsign: station.callsign,
+                                isActive: false,
+                                isCompact: presentations[station.id] == .dot,
+                                showsCallsign: presentations[station.id] != .icon
+                            )
+                        }
+                        .tag(station.id)
+                    }
+
+                }
+                .mapStyle(.standard(elevation: .flat, emphasis: .muted))
+                .mapControls {
+                    MapCompass()
+                    MapUserLocationButton()
+                }
+                .onAppear {
+                    if centersOnUser { centerOnUserIfAvailable() }
+                }
+                .onChange(of: model.locationService.currentLocation?.timestamp) { _, _ in
+                    if centersOnUser { centerOnUserIfAvailable() }
+                }
+                .onChange(of: model.settings.server.filterRadiusKilometers) { _, _ in
+                    if centersOnUser { resetMapToNearbyStationRadius() }
+                }
+                .onMapCameraChange(frequency: .continuous) { context in
+                    visibleRegion.wrappedValue = context.region
+                }
             }
         }
     }
@@ -284,9 +289,38 @@ struct DashboardView: View {
 }
 
 enum DashboardLayout {
-    static func mapHeight(for viewportSize: CGSize) -> CGFloat {
-        guard viewportSize.width >= 700 else { return 225 }
-        return min(max(viewportSize.height * 0.46, 360), 640)
+    static func mapHeight(availableHeight: CGFloat, headerHeight: CGFloat, controlsHeight: CGFloat) -> CGFloat {
+        // Keep the controls and breathing room visible before allocating space to the map.
+        let remaining = max(0, availableHeight - headerHeight - 12 - controlsHeight)
+        return max(0, remaining - max(32, remaining * 0.12))
+    }
+}
+
+private struct DashboardCardLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        proposal.replacingUnspecifiedDimensions()
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 2 else { return }
+        let natural = ProposedViewSize(width: bounds.width, height: nil)
+        let controlsHeight = subviews[1].sizeThatFits(natural).height
+        let mapHeight = DashboardLayout.mapHeight(
+            availableHeight: bounds.height, headerHeight: 0, controlsHeight: controlsHeight
+        )
+        subviews[0].place(at: bounds.origin, anchor: .topLeading,
+                          proposal: ProposedViewSize(width: bounds.width, height: mapHeight))
+        subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.minY + mapHeight + 12), anchor: .topLeading,
+                          proposal: ProposedViewSize(width: bounds.width, height: max(controlsHeight, bounds.height - mapHeight - 12)))
+    }
+}
+
+private enum BeaconTransmissionFeedback {
+    static func progress(lastBeaconAt: Date?, now: Date) -> Double? {
+        guard let lastBeaconAt else { return nil }
+        let elapsed = now.timeIntervalSince(lastBeaconAt)
+        guard elapsed >= 0, elapsed < 2 else { return nil }
+        return elapsed / 2
     }
 }
 
@@ -295,9 +329,7 @@ private struct APRSConnectionIndicator: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.25)) { timeline in
-            let isTransmitting = model.lastBeaconAt.map {
-                timeline.date.timeIntervalSince($0) >= 0 && timeline.date.timeIntervalSince($0) < 2
-            } ?? false
+            let isTransmitting = BeaconTransmissionFeedback.progress(lastBeaconAt: model.lastBeaconAt, now: timeline.date) != nil
 
             HStack(spacing: 5) {
                 Circle()
@@ -318,129 +350,204 @@ private struct APRSConnectionIndicator: View {
     }
 }
 
-private struct BeaconControlCard: View {
+private struct AutoBeaconButton: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isUpdating = false
     let showSettings: () -> Void
 
     private var hasCallsign: Bool {
         !model.settings.identity.fullCallsign.isEmpty
     }
 
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !model.isBeaconing || reduceMotion)) { timeline in
-            let pulse = glowIntensity(at: timeline.date)
+    private var isManual: Bool { model.settings.beaconing.mode == .manual }
+    private var isOn: Bool { model.isBeaconing && !isManual }
 
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    if model.isDemoMode {
-                        Text("DEMO")
-                            .font(.title2.bold().monospaced())
-                    } else if hasCallsign {
-                        Text(model.settings.identity.fullCallsign)
-                            .font(.title2.bold().monospaced())
-                    } else {
-                        Button(action: showSettings) {
-                            HStack(spacing: 5) {
-                                Text("Set your callsign")
-                                Image(systemName: "chevron.right")
-                                    .font(.subheadline.bold())
-                            }
-                            .font(.title2.bold())
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.25)) { status in
+            let isTransmitting = BeaconTransmissionFeedback.progress(lastBeaconAt: model.lastBeaconAt, now: status.date) != nil
+            let isLit = isOn || isTransmitting
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isLit || reduceMotion)) { timeline in
+                let progress = BeaconTransmissionFeedback.progress(lastBeaconAt: model.lastBeaconAt, now: timeline.date)
+                let pulse = isTransmitting ? (reduceMotion ? 0.6 : (sin((progress ?? 1) * .pi * 2) + 1) / 2) : glowIntensity(at: timeline.date)
+                VStack(spacing: 14) {
+                    VStack(spacing: 14) {
+                        Button(action: activateBeaconButton) {
+                            Image(systemName: "power")
+                                .font(.system(size: 42, weight: .semibold))
+                                .foregroundStyle(isLit ? Color.green : Color(red: 1, green: 0.65, blue: 0))
+                                .frame(width: 108, height: 108)
                         }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.blue)
-                        .accessibilityHint("Opens amateur identity settings")
+                        .buttonStyle(PhysicalBeaconButtonStyle(isOn: isLit, pulse: pulse))
+                        .overlay {
+                            if isTransmitting, !reduceMotion, let progress {
+                                Circle()
+                                    .stroke(Color.green.opacity(0.65 * (1 - progress)), lineWidth: 2)
+                                    .scaleEffect(1 + 0.35 * progress)
+                                    .allowsHitTesting(false)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .highPriorityGesture(
+                            LongPressGesture(minimumDuration: 0.6)
+                                .exclusively(before: TapGesture())
+                                .onEnded { gesture in
+                                    switch gesture {
+                                    case .first(true): sendManualBeacon()
+                                    case .second: activateBeaconButton()
+                                    default: break
+                                    }
+                                }
+                        )
+                        .disabled(model.isDemoMode || isUpdating)
+                        .opacity(model.isDemoMode ? 0.45 : 1)
+                        .accessibilityLabel(hasCallsign ? "Beacon control" : "Set your callsign")
+                        .accessibilityValue(isManual ? "Manual mode" : (isOn ? "Auto-beaconing on" : "Auto-beaconing off"))
+                        .accessibilityHint(isManual
+                                           ? "Tap to send a manual beacon"
+                                           : "Tap to toggle auto-beaconing. Hold to send a manual beacon")
+                        .accessibilityAction(named: "Send manual beacon") { sendManualBeacon() }
+
+                        Text(model.isDemoMode ? "Auto-beaconing unavailable in Demo"
+                             : (isManual ? "Manual beaconing" : !hasCallsign ? "Set your callsign"
+                                : "Auto-beaconing is \(isOn ? "ON" : "OFF")"))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(isOn ? Color.green : Color.secondary)
+                            .multilineTextAlignment(.center)
                     }
-                    Text(model.isDemoMode
-                         ? "Transmitting is disabled"
-                         : (model.isBeaconing ? "Auto-beaconing is ON" : "Auto-beaconing is off"))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+
+                    VStack(spacing: 4) {
+                        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                            let remaining = model.beaconNowCooldownRemaining(at: timeline.date)
+                            Text(remaining > 0 ? "Manual beacon ready in \(remaining)s" : " ")
+                                .font(.caption2)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(remaining == 0)
+                        }
+                        Text(isManual ? "Tap button to send manual beacon" : "Hold button to send manual beacon")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
-                Spacer()
-                Toggle("Auto-beaconing", isOn: Binding(
-                    get: { model.isBeaconing },
-                    set: { _ in Task { await model.toggleBeaconing() } }
-                ))
-                .labelsHidden()
-                .tint(.green)
-                .disabled(model.isDemoMode || !hasCallsign)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.vertical, 12)
             }
-            .padding(16)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(.green.opacity(model.isBeaconing ? 0.3 + (0.6 * pulse) : 0), lineWidth: 1.5)
-            }
-            .shadow(
-                color: .green.opacity(model.isBeaconing ? 0.18 + (0.47 * pulse) : 0),
-                radius: model.isBeaconing ? 4 + (9 * pulse) : 0
-            )
+        }
+    }
+
+    private func activateBeaconButton() {
+        guard !model.isDemoMode, !isUpdating else { return }
+        if isManual {
+            sendManualBeacon()
+            return
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        guard hasCallsign else { showSettings(); return }
+        isUpdating = true
+        Task {
+            await model.toggleBeaconing()
+            isUpdating = false
+        }
+    }
+
+    private func sendManualBeacon() {
+        guard !model.isDemoMode, !isUpdating, model.beaconNowCooldownRemaining() == 0 else { return }
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred(intensity: 1.0)
+        isUpdating = true
+        Task {
+            await model.beaconNow()
+            isUpdating = false
         }
     }
 
     private func glowIntensity(at date: Date) -> Double {
-        guard model.isBeaconing else { return 0 }
+        guard isOn else { return 0 }
         guard !reduceMotion else { return 0.35 }
         let cycle = date.timeIntervalSinceReferenceDate * (.pi / 1.15)
         return (sin(cycle) + 1) / 2
     }
 }
 
-private struct TelemetryGrid: View {
-    @Environment(AppModel.self) private var model
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
+private struct PhysicalBeaconButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let isOn: Bool
+    let pulse: Double
 
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { timeline in
-            tiles(at: timeline.date)
-        }
-    }
-
-    private func tiles(at now: Date) -> some View {
-        LazyVGrid(columns: columns, spacing: 6) {
-            TelemetryTile(title: "Last Beacon", value: model.lastBeaconAt?.relativeLabel(at: now) ?? "Not yet", detail: model.lastBeaconAt?.formatted(date: .omitted, time: .shortened), icon: "circle.fill", tint: model.lastBeaconAt == nil ? .secondary : .green)
-            TelemetryTile(title: "Next Beacon", value: model.nextBeaconAt?.countdownLabel(at: now) ?? "—", detail: model.settings.beaconing.mode.rawValue, icon: "clock.fill", tint: .blue)
-            TelemetryTile(title: "GPS Accuracy", value: model.locationService.currentLocation?.accuracyLabel ?? "—", detail: nil, icon: "scope", tint: .blue)
-            TelemetryTile(title: "Speed", value: model.locationService.currentLocation?.speedLabel(unit: model.settings.display.speedUnit) ?? "—", detail: nil, icon: "car.fill", tint: .blue)
-            TelemetryTile(title: "Altitude", value: model.locationService.currentLocation?.altitudeLabel ?? "—", detail: nil, icon: "mountain.2.fill", tint: .secondary)
-            TelemetryTile(title: "Heading", value: model.locationService.currentLocation?.headingLabel ?? "—", detail: nil, icon: "location.fill", tint: .blue)
-        }
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isOn ? Color.green : Color.white.opacity(0.8))
+            .shadow(color: isOn ? .green.opacity(0.2) : .clear, radius: 3)
+            .background {
+                Circle()
+                    .fill(LinearGradient(
+                        colors: [
+                            Color(uiColor: configuration.isPressed ? .secondarySystemGroupedBackground : .tertiarySystemGroupedBackground),
+                            Color(uiColor: .secondarySystemBackground)
+                        ],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ))
+                    .overlay {
+                        Circle().strokeBorder(
+                            LinearGradient(colors: [.white.opacity(0.2), .primary.opacity(0.08)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                            lineWidth: 1
+                        )
+                    }
+                    .shadow(color: .black.opacity(0.12), radius: configuration.isPressed ? 1 : 4,
+                            y: configuration.isPressed ? 1 : 3)
+            }
+            .offset(y: configuration.isPressed ? 1 : -1)
+            .padding(6)
+            .background {
+                Circle()
+                    .fill(Color(uiColor: .tertiarySystemFill))
+                    .overlay {
+                        Circle().strokeBorder(isOn ? Color.green.opacity(0.25 + 0.4 * pulse) : .gray.opacity(0.12), lineWidth: 2)
+                    }
+                    .shadow(color: isOn ? .green.opacity(0.08 + 0.2 * pulse) : .black.opacity(0.2),
+                            radius: isOn ? 3 + 6 * pulse : 2, y: isOn ? 0 : 3)
+            }
+            .contentShape(Circle())
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
-private struct TelemetryTile: View {
-    let title: String
-    let value: String
-    let detail: String?
-    let icon: String
-    let tint: Color
+private struct BeaconSummaryPanel: View {
+    @Environment(AppModel.self) private var model
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(tint)
-                Text(value)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.65)
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+            HStack(spacing: 12) {
+                summaryValue("Last beacon", value: model.lastBeaconAt?.relativeLabel(at: timeline.date) ?? "None yet")
+                summaryValue("Next beacon", value: nextStatus(at: timeline.date))
             }
-            Text(detail ?? " ")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
+            .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
-        .padding(11)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func summaryValue(_ title: String, value: String) -> some View {
+        Text("\(title): \(value)")
+            .font(.caption)
+            .monospacedDigit()
+            .frame(maxWidth: .infinity, alignment: .center)
+            .multilineTextAlignment(.center)
+    }
+
+    private func nextStatus(at now: Date) -> String {
+        if model.isDemoMode { return "Demo" }
+        if model.settings.beaconing.mode == .manual { return "Manual" }
+        if !model.isBeaconing { return "Paused" }
+        if model.connectionState != .connected(verified: true) { return "Waiting for connection" }
+        guard let location = model.locationService.currentLocation else { return "Waiting for GPS" }
+        if location.horizontalAccuracy < 0 || location.horizontalAccuracy > model.settings.beaconing.maximumAccuracyMeters {
+            return "Low GPS accuracy"
+        }
+        if model.lastBeaconError != nil { return "Retrying" }
+        return model.nextBeaconAt?.countdownLabel(at: now) ?? "Preparing"
     }
 }
 
@@ -497,42 +604,62 @@ struct TrackView: View {
 }
 
 enum StationAnnotationLayout {
-    private static let metersPerDegreeLatitude = 111_000.0
-    private static let pointsPerFullMarker = 30_000.0
+    enum Presentation { case full, icon, dot }
 
-    static func isCompact(
-        latitudeDelta: CLLocationDegrees,
-        viewportSize: CGSize,
-        visibleStationCount: Int
-    ) -> Bool {
-        let spanMeters = latitudeDelta * metersPerDegreeLatitude
-        return spanMeters > maximumFullMarkerSpan(for: viewportSize)
-            || visibleStationCount > fullMarkerCapacity(for: viewportSize)
+    struct Candidate {
+        let id: String
+        let point: CGPoint
+        let fullSize: CGSize
     }
 
-    static func maximumFullMarkerSpan(for viewportSize: CGSize) -> CLLocationDistance {
-        switch min(viewportSize.width, viewportSize.height) {
-        case ..<350: 80_000
-        case ..<600: 160_000
-        default: 1_000_000
+    static func markerSize(callsign: String) -> CGSize {
+        let font = UIFont.monospacedSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .caption2).pointSize, weight: .bold)
+        let width = (callsign as NSString).size(withAttributes: [.font: font]).width + 10
+        return CGSize(width: max(32, width), height: callsign.isEmpty ? 32 : font.lineHeight + 36)
+    }
+
+    static func presentations(
+        candidates: [Candidate], viewport: CGRect, reserved: [CGRect] = [], selectedID: String? = nil
+    ) -> [String: Presentation] {
+        var occupied = reserved
+        var result: [String: Presentation] = [:]
+        // Stable ordering avoids changing the visible labels whenever packets arrive.
+        let ordered = candidates.sorted {
+            if ($0.id == selectedID) != ($1.id == selectedID) { return $0.id == selectedID }
+            return $0.id < $1.id
         }
-    }
-
-    static func fullMarkerCapacity(for viewportSize: CGSize) -> Int {
-        let area = max(0, viewportSize.width * viewportSize.height)
-        return min(60, max(4, Int(area / pointsPerFullMarker)))
-    }
-
-    static func visibleStationCount(
-        in region: MKCoordinateRegion,
-        stations: [APRSStation]
-    ) -> Int {
-        let halfLatitude = region.span.latitudeDelta / 2
-        let halfLongitude = region.span.longitudeDelta / 2
-        return stations.count { station in
-            abs(station.coordinate.latitude - region.center.latitude) <= halfLatitude
-                && abs(station.coordinate.longitude - region.center.longitude) <= halfLongitude
+        for candidate in ordered {
+            guard candidate.point.x.isFinite, candidate.point.y.isFinite else { continue }
+            func bounds(_ size: CGSize) -> CGRect {
+                CGRect(x: candidate.point.x - size.width / 2, y: candidate.point.y - size.height,
+                       width: size.width, height: size.height)
+            }
+            let full = bounds(candidate.fullSize)
+            guard full.intersects(viewport) else { continue }
+            func fits(_ rect: CGRect) -> Bool {
+                occupied.allSatisfy { other in
+                    let overlap = rect.intersection(other)
+                    guard !overlap.isNull else { return true }
+                    let smallerArea = min(rect.width * rect.height, other.width * other.height)
+                    // Small edge overlaps are fine; substantial occlusion is not.
+                    return overlap.width * overlap.height <= smallerArea * 0.1
+                }
+            }
+            if candidate.id == selectedID || fits(full) {
+                result[candidate.id] = .full
+                occupied.append(full)
+            } else {
+                let icon = bounds(CGSize(width: 32, height: 32))
+                if fits(icon) {
+                    result[candidate.id] = .icon
+                    occupied.append(icon)
+                } else {
+                    result[candidate.id] = .dot
+                    occupied.append(bounds(CGSize(width: 17, height: 17)))
+                }
+            }
         }
+        return result
     }
 }
 
@@ -560,6 +687,7 @@ struct APRSSymbolMapMarker: View {
     let callsign: String
     let isActive: Bool
     var isCompact = false
+    var showsCallsign = true
 
     var body: some View {
         Group {
@@ -572,7 +700,7 @@ struct APRSSymbolMapMarker: View {
                     .frame(width: 17, height: 17)
             } else {
                 VStack(spacing: 2) {
-                    if !callsign.isEmpty {
+                    if showsCallsign && !callsign.isEmpty {
                         Text(callsign)
                             .font(.caption2.bold().monospaced())
                             .foregroundStyle(.white)

@@ -115,31 +115,45 @@ final class BeaconCoreTests: XCTestCase {
         XCTAssertEqual(customized.beaconing.comment, "Mobile station")
     }
 
-    func testStationAnnotationDeclutteringAdaptsToScreenSizeAndDensity() {
-        let compactPhone = CGSize(width: 320, height: 568)
-        let standardPhone = CGSize(width: 393, height: 852)
-        let tablet = CGSize(width: 820, height: 1_180)
+    func testSeparatedStationsKeepLabelsRegardlessOfCount() {
+        var candidates: [StationAnnotationLayout.Candidate] = []
+        for index in 0..<100 {
+            let x = CGFloat(50 + (index % 10) * 100)
+            let y = CGFloat(60 + (index / 10) * 70)
+            candidates.append(.init(id: String(index), point: CGPoint(x: x, y: y),
+                                    fullSize: CGSize(width: 80, height: 50)))
+        }
+        let result = StationAnnotationLayout.presentations(candidates: candidates, viewport: CGRect(x: 0, y: 0, width: 1_000, height: 800))
+        XCTAssertEqual(result.count, 100)
+        XCTAssertTrue(result.values.allSatisfy { $0 == .full })
+    }
 
-        XCTAssertTrue(StationAnnotationLayout.isCompact(
-            latitudeDelta: 100_000 / 111_000,
-            viewportSize: compactPhone,
-            visibleStationCount: 8
-        ))
-        XCTAssertFalse(StationAnnotationLayout.isCompact(
-            latitudeDelta: 100_000 / 111_000,
-            viewportSize: standardPhone,
-            visibleStationCount: 8
-        ))
-        XCTAssertTrue(StationAnnotationLayout.isCompact(
-            latitudeDelta: 100_000 / 111_000,
-            viewportSize: standardPhone,
-            visibleStationCount: 12
-        ))
-        XCTAssertFalse(StationAnnotationLayout.isCompact(
-            latitudeDelta: 500_000 / 111_000,
-            viewportSize: tablet,
-            visibleStationCount: 30
-        ))
+    func testMarkerOverlapHidesLabelsBeforeIconsAndLeavesIsolatedStationsFull() {
+        let candidates: [StationAnnotationLayout.Candidate] = [
+            .init(id: "A", point: CGPoint(x: 100, y: 100), fullSize: CGSize(width: 100, height: 50)),
+            .init(id: "B", point: CGPoint(x: 170, y: 100), fullSize: CGSize(width: 100, height: 50)),
+            .init(id: "C", point: CGPoint(x: 171, y: 100), fullSize: CGSize(width: 100, height: 50)),
+            .init(id: "D", point: CGPoint(x: 300, y: 200), fullSize: CGSize(width: 100, height: 50))
+        ]
+        let viewport = CGRect(x: 0, y: 0, width: 400, height: 300)
+        let result = StationAnnotationLayout.presentations(candidates: candidates, viewport: viewport)
+        XCTAssertEqual(result["A"], .full)
+        XCTAssertEqual(result["B"], .icon)
+        XCTAssertEqual(result["C"], .dot)
+        XCTAssertEqual(result["D"], .full)
+        XCTAssertEqual(result, StationAnnotationLayout.presentations(candidates: candidates.reversed(), viewport: viewport))
+        let selected = StationAnnotationLayout.presentations(candidates: candidates, viewport: viewport, selectedID: "C")
+        XCTAssertEqual(selected["C"], .full)
+    }
+
+    func testMarkerLayoutIgnoresOffscreenStationsAndReservesOwnMarker() {
+        let result = StationAnnotationLayout.presentations(candidates: [
+            .init(id: "Nearby", point: CGPoint(x: 100, y: 100), fullSize: CGSize(width: 80, height: 50)),
+            .init(id: "Offscreen", point: CGPoint(x: -100, y: 100), fullSize: CGSize(width: 80, height: 50))
+        ], viewport: CGRect(x: 0, y: 0, width: 400, height: 300),
+           reserved: [CGRect(x: 60, y: 50, width: 80, height: 50)])
+        XCTAssertEqual(result["Nearby"], .dot)
+        XCTAssertNil(result["Offscreen"])
     }
 
     func testDefaultMapSpanIncludesTheConfiguredStationRadius() {
@@ -149,21 +163,19 @@ final class BeaconCoreTests: XCTestCase {
         )
     }
 
-    func testDashboardMapUsesAvailableIPadHeight() {
-        XCTAssertEqual(
-            DashboardLayout.mapHeight(for: CGSize(width: 393, height: 852)),
-            225
-        )
-        XCTAssertEqual(
-            DashboardLayout.mapHeight(for: CGSize(width: 820, height: 1_180)),
-            542.8,
-            accuracy: 0.01
-        )
-        XCTAssertEqual(
-            DashboardLayout.mapHeight(for: CGSize(width: 1_024, height: 1_366)),
-            628.36,
-            accuracy: 0.01
-        )
+    func testDashboardMapGrowsWhileReservingVisibleControls() {
+        let heights: [CGFloat] = [400, 600, 900, 1_200]
+        var previous: CGFloat = 0
+        for height in heights {
+            let map = DashboardLayout.mapHeight(availableHeight: height, headerHeight: 64, controlsHeight: 182)
+            XCTAssertGreaterThan(map, previous)
+            XCTAssertLessThanOrEqual(map + 64 + 12 + 182 + 32, height)
+            previous = map
+        }
+        let normal = DashboardLayout.mapHeight(availableHeight: 600, headerHeight: 64, controlsHeight: 182)
+        let largeText = DashboardLayout.mapHeight(availableHeight: 600, headerHeight: 90, controlsHeight: 240)
+        XCTAssertLessThan(largeText, normal)
+        XCTAssertGreaterThanOrEqual(DashboardLayout.mapHeight(availableHeight: 100, headerHeight: 64, controlsHeight: 182), 0)
     }
 
     @MainActor
@@ -461,6 +473,43 @@ final class BeaconCoreTests: XCTestCase {
         XCTAssertEqual(station?.coordinate.longitude ?? 0, -117.875, accuracy: 0.00001)
         XCTAssertEqual(station?.stationType, .moving)
         XCTAssertEqual(station?.equipment, "Yaesu FTM-510D")
+    }
+
+    func testAutomaticBeaconsWaitThirtySecondsEvenWithShortConfiguredIntervals() {
+        let sentAt = Date()
+        let location = CLLocation(latitude: 33.7, longitude: -117.7)
+        for mode in [AppSettings.Beaconing.Mode.smart, .timed] {
+            var configuration = AppSettings.Beaconing()
+            configuration.mode = mode
+            configuration.timedInterval = 5
+            configuration.stoppedInterval = 5
+            for elapsed: TimeInterval in [10, 29.9, 30] {
+                let decision = SmartBeaconingPolicy().decision(
+                    current: location, previousBeacon: location, lastBeaconAt: sentAt,
+                    configuration: configuration, now: sentAt.addingTimeInterval(elapsed)
+                )
+                XCTAssertEqual(decision.shouldBeacon, elapsed >= 30)
+                XCTAssertEqual(decision.nextBeaconAt, sentAt.addingTimeInterval(30))
+            }
+        }
+    }
+
+    func testTurnBeaconWaitsThirtySeconds() {
+        let sentAt = Date()
+        func location(course: Double) -> CLLocation {
+            CLLocation(coordinate: .init(latitude: 33.7, longitude: -117.7),
+                       altitude: 0, horizontalAccuracy: 5, verticalAccuracy: 5,
+                       course: course, speed: 10, timestamp: sentAt)
+        }
+        for elapsed: TimeInterval in [15, 29.9, 30] {
+            let decision = SmartBeaconingPolicy().decision(
+                current: location(course: 90), previousBeacon: location(course: 0),
+                lastBeaconAt: sentAt, configuration: .init(),
+                now: sentAt.addingTimeInterval(elapsed)
+            )
+            XCTAssertEqual(decision.shouldBeacon, elapsed >= 30)
+            if elapsed >= 30 { XCTAssertEqual(decision.reason, "Heading changed") }
+        }
     }
 
     func testSmartBeaconingSendsFirstPosition() {

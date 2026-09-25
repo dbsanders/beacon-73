@@ -8,6 +8,8 @@ struct BeaconDecision: Equatable {
 }
 
 struct SmartBeaconingPolicy {
+    static let minimumInterval: TimeInterval = 30
+
     func decision(
         current: CLLocation,
         previousBeacon: CLLocation?,
@@ -19,7 +21,8 @@ struct SmartBeaconingPolicy {
             return BeaconDecision(shouldBeacon: false, nextBeaconAt: nil, reason: "Manual mode")
         }
         guard let previousBeacon, let lastBeaconAt else {
-            return BeaconDecision(shouldBeacon: true, nextBeaconAt: now, reason: "First position")
+            let dueAt = lastBeaconAt?.addingTimeInterval(Self.minimumInterval) ?? now
+            return BeaconDecision(shouldBeacon: now >= dueAt, nextBeaconAt: max(now, dueAt), reason: "First position")
         }
 
         let interval: TimeInterval
@@ -34,7 +37,7 @@ struct SmartBeaconingPolicy {
             interval = configuration.slowInterval - fraction * (configuration.slowInterval - configuration.fastInterval)
         }
 
-        let dueAt = lastBeaconAt.addingTimeInterval(interval)
+        let dueAt = lastBeaconAt.addingTimeInterval(max(Self.minimumInterval, interval))
         if now >= dueAt {
             return BeaconDecision(shouldBeacon: true, nextBeaconAt: now, reason: "Interval elapsed")
         }
@@ -45,7 +48,7 @@ struct SmartBeaconingPolicy {
            current.course >= 0 {
             let turn = angularDifference(previousBeacon.course, current.course)
             if turn >= configuration.turnThresholdDegrees,
-               now.timeIntervalSince(lastBeaconAt) >= 15 {
+               now.timeIntervalSince(lastBeaconAt) >= Self.minimumInterval {
                 return BeaconDecision(shouldBeacon: true, nextBeaconAt: now, reason: "Heading changed")
             }
         }

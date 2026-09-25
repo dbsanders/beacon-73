@@ -121,6 +121,7 @@ final class AppModel {
     private var beaconTask: Task<Void, Never>?
     private var lastBeaconLocation: CLLocation?
     private var lastManualBeaconAttemptAt: Date?
+    private var isSendingBeacon = false
     private var hasPreparedForLaunch = false
 
     init() {
@@ -204,7 +205,7 @@ final class AppModel {
         guard beaconNowCooldownRemaining(at: now) == 0 else { return }
         lastManualBeaconAttemptAt = now
 
-        await sendBeacon(at: location)
+        await sendBeacon(at: location, manually: true)
         if let lastBeaconError {
             beaconAlertMessage = lastBeaconError
         }
@@ -435,7 +436,10 @@ final class AppModel {
         if decision.shouldBeacon { await sendBeacon(at: location) }
     }
 
-    private func sendBeacon(at location: CLLocation) async {
+    private func sendBeacon(at location: CLLocation, manually: Bool = false) async {
+        guard !isSendingBeacon else { return }
+        isSendingBeacon = true
+        defer { isSendingBeacon = false }
         guard !isDemoMode else {
             beaconAlertMessage = "Transmitting is disabled in Demo Mode."
             return
@@ -452,6 +456,11 @@ final class AppModel {
             return
         }
         guard let client else { return }
+        // Enforce spacing for every send path, including starting beaconing.
+        let minimumInterval = manually ? Self.beaconNowCooldown : SmartBeaconingPolicy.minimumInterval
+        if let lastBeaconAt, Date().timeIntervalSince(lastBeaconAt) < minimumInterval {
+            return
+        }
         let packet = APRSPacket.position(
             callsign: settings.identity.fullCallsign,
             location: location,
