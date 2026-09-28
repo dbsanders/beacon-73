@@ -87,6 +87,8 @@ AWS_PROFILE=beacon-prod aws cloudfront create-invalidation \
 
 The GitHub Actions workflow in `.github/workflows/fcc-callsign-import.yml` runs each Sunday at 18:00 UTC and can also be started manually. It uses GitHub OIDC to assume a repository-and-branch-restricted AWS role; no long-lived AWS key or GitHub secret is required.
 
+The role trusts GitHub's immutable subject for this repository on `main`: `repo:dbsanders@21073778/beacon-73@1378536487:ref:refs/heads/main`. To check the repository's current subject settings, run `gh api repos/dbsanders/beacon-73/actions/oidc/customization/sub`. When `use_immutable_subject` is true, a name-only subject will fail with `Not authorized to perform sts:AssumeRoleWithWebIdentity`. Keep the trust condition aligned with GitHub's `sub_claim_prefix` plus `:ref:refs/heads/main`; do not broaden it to other repositories or branches.
+
 For a manual import outside GitHub, first place the official archive under an `imports/.../l_amat.zip` key with `source-updated-at` object metadata, then invoke the processor with that key:
 
 ```sh

@@ -200,7 +200,8 @@ resource "aws_iam_role" "github_fcc_import" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:dbsanders/beacon-73:ref:refs/heads/main"
+          # GitHub's immutable subject includes the owner and repository IDs.
+          "token.actions.githubusercontent.com:sub" = "repo:dbsanders@21073778/beacon-73@1378536487:ref:refs/heads/main"
         }
       }
     }]
