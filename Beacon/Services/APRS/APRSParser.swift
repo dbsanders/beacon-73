@@ -257,7 +257,12 @@ enum APRSParser {
         "|3": "Byonics TinyTrak3",
         "|4": "Byonics TinyTrak4",
         "^A": "APRS Connect",
-        "[1": "APRSdroid"
+        "[1": "APRSdroid",
+        "^v": "HinzTec anyfrog",
+        "*v": "KissOZ Tracker",
+        "*9": "NOR AVRT9",
+        ":2": "SQ8L VP-Tracker",
+        " X": "SainSonic AP510"
     ]
 
     private static let micELegacyEquipment: [String: String] = [
