@@ -1,11 +1,18 @@
+import CoreLocation
 import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openURL) private var openURL
     @State private var isPasscodeVisible = false
     @State private var isShowingPasscodeRequest = false
     @State private var passcodeRequestConfirmation: String?
     let showMap: () -> Void
+
+    private var receiveRadiusLabel: String {
+        let unit = model.settings.display.distanceUnit == .miles ? "mi" : "km"
+        return "\(model.settings.receiveRadius) \(unit)"
+    }
 
     var body: some View {
         @Bindable var model = model
@@ -184,20 +191,17 @@ struct SettingsView: View {
 
                 Section("Stations") {
                     Stepper(
-                        "Station Receive Radius: \(model.settings.server.filterRadiusKilometers) km",
-                        value: $model.settings.server.filterRadiusKilometers,
-                        in: 10...500,
-                        step: 10
+                        "Station Receive Radius: \(receiveRadiusLabel)",
+                        value: $model.settings.receiveRadiusChoiceIndex,
+                        in: 0...(AppSettings.receiveRadiusChoices.count - 1),
+                        step: 1
                     )
                     Toggle("Moving stations", isOn: $model.settings.display.showMovingStations)
                     Toggle("Fixed stations", isOn: $model.settings.display.showFixedStations)
                     Toggle("Weather stations", isOn: $model.settings.display.showWeatherStations)
                 }
 
-                Section("Map") {
-                    Picker("Speed", selection: $model.settings.display.speedUnit) {
-                        ForEach(AppSettings.Display.SpeedUnit.allCases) { Text($0.rawValue).tag($0) }
-                    }
+                Section("Units") {
                     Picker("Distance", selection: $model.settings.display.distanceUnit) {
                         ForEach(AppSettings.Display.DistanceUnit.allCases) { Text($0.rawValue).tag($0) }
                     }
@@ -211,9 +215,24 @@ struct SettingsView: View {
                     Text("Advanced")
                 }
 
-                Section("Location") {
+                Section {
                     LabeledContent("Permission", value: model.locationService.authorizationStatus.label)
-                    Button("Request Location Access") { model.locationService.requestPermission() }
+                    if model.locationService.authorizationStatus == .notDetermined {
+                        Button("Request Location Access") { model.locationService.requestPermission() }
+                    } else {
+                        Button("Open iOS Settings") {
+                            guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                            openURL(url)
+                        }
+                    }
+                } header: {
+                    Text("Location")
+                } footer: {
+                    if model.locationService.authorizationStatus == .restricted {
+                        Text("Location access is restricted by device settings or management policies.")
+                    } else if model.locationService.authorizationStatus != .notDetermined {
+                        Text("Change location access in iOS Settings. While Using the App is enough for auto-beaconing, including when the screen is locked.")
+                    }
                 }
             }
             .navigationTitle("Settings")
@@ -233,7 +252,9 @@ struct SettingsView: View {
                 }
                 keyboardDoneButton
             }
+            .onAppear { model.beginEditingSettings() }
             .onDisappear {
+                model.endEditingSettings()
                 model.saveSettings()
                 Task { await model.startReceiving() }
             }
@@ -605,7 +626,7 @@ private struct ServerSettingsView: View {
             Section {
                 TextField("Host", text: $model.settings.server.host)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
-                TextField("Port", value: $model.settings.server.port, format: .number)
+                TextField("Port", value: $model.settings.server.port, format: .number.grouping(.never))
                     .keyboardType(.numberPad)
             } footer: {
                 Text("The default rotating APRS-IS endpoint is appropriate for most users.")

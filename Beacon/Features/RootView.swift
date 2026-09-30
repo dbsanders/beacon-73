@@ -35,7 +35,7 @@ struct RootView: View {
             await model.prepareForLaunch()
             guard model.experienceMode != .undecided else { return }
             if !model.isDemoMode {
-                model.locationService.requestAlwaysPermission()
+                model.locationService.requestPermission()
             }
             await model.startReceiving()
         }

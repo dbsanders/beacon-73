@@ -6,15 +6,23 @@ import Observation
 @Observable
 final class LocationService: NSObject, @preconcurrency CLLocationManagerDelegate {
     var currentLocation: CLLocation?
-    var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
     var errorMessage: String?
     var onLocation: ((CLLocation) -> Void)?
+    var onAuthorizationChange: (() -> Void)?
 
-    private let manager = CLLocationManager()
+    var hasLocationPermission: Bool {
+        authorizationStatus == .authorizedAlways || authorizationStatus == .authorizedWhenInUse
+    }
+
+    static let permissionRequiredMessage = "Location access is required to beacon your position. Enable Location access for Beacon 73 in iOS Settings, then turn beaconing on again."
+
+    private let manager: CLLocationManager
+    private var wantsLocationUpdates = false
     private var wantsBackgroundUpdates = false
-    private var pendingAlwaysAuthorizationRequest = false
 
-    override init() {
+    init(manager: CLLocationManager = CLLocationManager()) {
+        self.manager = manager
         super.init()
         manager.delegate = self
         manager.activityType = .automotiveNavigation
@@ -25,69 +33,68 @@ final class LocationService: NSObject, @preconcurrency CLLocationManagerDelegate
     }
 
     func requestPermission() {
-        requestAlwaysPermission()
-    }
-
-    func requestAlwaysPermission() {
-        switch manager.authorizationStatus {
-        case .notDetermined:
-            pendingAlwaysAuthorizationRequest = true
-            manager.requestWhenInUseAuthorization()
-        case .authorizedWhenInUse:
-            pendingAlwaysAuthorizationRequest = true
-            manager.startUpdatingLocation()
-            manager.requestAlwaysAuthorization()
-        case .authorizedAlways:
-            pendingAlwaysAuthorizationRequest = false
-            manager.startUpdatingLocation()
-        default:
-            pendingAlwaysAuthorizationRequest = false
-        }
+        start(background: wantsBackgroundUpdates)
     }
 
     func start(background: Bool) {
+        wantsLocationUpdates = true
         wantsBackgroundUpdates = background
-        switch manager.authorizationStatus {
-        case .notDetermined:
+        if manager.authorizationStatus == .notDetermined {
             manager.requestWhenInUseAuthorization()
-        case .authorizedWhenInUse where background:
-            manager.requestAlwaysAuthorization()
-            manager.startUpdatingLocation()
-        case .authorizedAlways, .authorizedWhenInUse:
-            manager.allowsBackgroundLocationUpdates = background && manager.authorizationStatus == .authorizedAlways
-            manager.showsBackgroundLocationIndicator = background
-            manager.startUpdatingLocation()
-        default:
-            errorMessage = "Location access is required to beacon your position."
         }
+        refreshAuthorization()
     }
 
     func stop() {
+        wantsLocationUpdates = false
         wantsBackgroundUpdates = false
         manager.stopUpdatingLocation()
         manager.allowsBackgroundLocationUpdates = false
         manager.showsBackgroundLocationIndicator = false
+        manager.pausesLocationUpdatesAutomatically = true
+    }
+
+    func refreshAuthorization() {
+        authorizationDidChange(to: manager.authorizationStatus)
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        authorizationStatus = manager.authorizationStatus
-        if manager.authorizationStatus == .authorizedWhenInUse &&
-            (wantsBackgroundUpdates || pendingAlwaysAuthorizationRequest) {
-            pendingAlwaysAuthorizationRequest = false
-            manager.requestAlwaysAuthorization()
+        refreshAuthorization()
+    }
+
+    func authorizationDidChange(to status: CLAuthorizationStatus) {
+        authorizationStatus = status
+        guard hasLocationPermission else {
+            currentLocation = nil
+            if status != .notDetermined {
+                errorMessage = Self.permissionRequiredMessage
+                stop()
+            } else {
+                manager.stopUpdatingLocation()
+                manager.allowsBackgroundLocationUpdates = false
+                manager.showsBackgroundLocationIndicator = false
+            }
+            onAuthorizationChange?()
+            return
         }
-        if manager.authorizationStatus == .authorizedAlways {
-            pendingAlwaysAuthorizationRequest = false
-        }
-        if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
-            manager.allowsBackgroundLocationUpdates = wantsBackgroundUpdates && manager.authorizationStatus == .authorizedAlways
-            manager.showsBackgroundLocationIndicator = wantsBackgroundUpdates
+
+        errorMessage = nil
+        if wantsLocationUpdates {
+            // An explicitly started session can continue with When In Use access.
+            let background = wantsBackgroundUpdates
+            manager.allowsBackgroundLocationUpdates = background
+            manager.showsBackgroundLocationIndicator = background
+            // Pausing a When In Use session in the background can end access
+            // until the app returns to the foreground, including while stationary.
+            manager.pausesLocationUpdatesAutomatically = !background
             manager.startUpdatingLocation()
         }
+        onAuthorizationChange?()
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.last else { return }
+        guard hasLocationPermission, wantsLocationUpdates,
+              let location = locations.last else { return }
         currentLocation = location
         onLocation?(location)
     }

@@ -329,7 +329,7 @@ private struct APRSConnectionIndicator: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.25)) { timeline in
-            let isTransmitting = BeaconTransmissionFeedback.progress(lastBeaconAt: model.lastBeaconAt, now: timeline.date) != nil
+            let isTransmitting = model.locationService.hasLocationPermission && BeaconTransmissionFeedback.progress(lastBeaconAt: model.lastBeaconAt, now: timeline.date) != nil
 
             HStack(spacing: 5) {
                 Circle()
@@ -361,11 +361,11 @@ private struct AutoBeaconButton: View {
     }
 
     private var isManual: Bool { model.settings.beaconing.mode == .manual }
-    private var isOn: Bool { model.isBeaconing && !isManual }
+    private var isOn: Bool { model.isBeaconing && !isManual && model.locationService.hasLocationPermission }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.25)) { status in
-            let isTransmitting = BeaconTransmissionFeedback.progress(lastBeaconAt: model.lastBeaconAt, now: status.date) != nil
+            let isTransmitting = model.locationService.hasLocationPermission && BeaconTransmissionFeedback.progress(lastBeaconAt: model.lastBeaconAt, now: status.date) != nil
             let isLit = isOn || isTransmitting
             TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isLit || reduceMotion)) { timeline in
                 let progress = BeaconTransmissionFeedback.progress(lastBeaconAt: model.lastBeaconAt, now: timeline.date)
@@ -402,14 +402,14 @@ private struct AutoBeaconButton: View {
                         .disabled(model.isDemoMode || isUpdating)
                         .opacity(model.isDemoMode ? 0.45 : 1)
                         .accessibilityLabel(hasCallsign ? "Beacon control" : "Set your callsign")
-                        .accessibilityValue(isManual ? "Manual mode" : (isOn ? "Auto-beaconing on" : "Auto-beaconing off"))
+                        .accessibilityValue(!model.locationService.hasLocationPermission ? "Location access required" : isManual ? "Manual mode" : (isOn ? "Auto-beaconing on" : "Auto-beaconing off"))
                         .accessibilityHint(isManual
                                            ? "Tap to send a manual beacon"
                                            : "Tap to toggle auto-beaconing. Hold to send a manual beacon")
                         .accessibilityAction(named: "Send manual beacon") { sendManualBeacon() }
 
                         Text(model.isDemoMode ? "Auto-beaconing unavailable in Demo"
-                             : (isManual ? "Manual beaconing" : !hasCallsign ? "Set your callsign"
+                             : (!model.locationService.hasLocationPermission ? "Location access required" : isManual ? "Manual beaconing" : !hasCallsign ? "Set your callsign"
                                 : "Auto-beaconing is \(isOn ? "ON" : "OFF")"))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(isOn ? Color.green : Color.secondary)
@@ -427,7 +427,7 @@ private struct AutoBeaconButton: View {
                                 .foregroundStyle(.secondary)
                                 .accessibilityHidden(remaining == 0)
                         }
-                        Text(isManual ? "Tap button to send manual beacon" : "Hold button to send manual beacon")
+                        Text(!model.locationService.hasLocationPermission ? "Enable Location access in iOS Settings" : isManual ? "Tap button to send manual beacon" : "Hold button to send manual beacon")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)

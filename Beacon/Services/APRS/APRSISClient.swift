@@ -20,7 +20,10 @@ actor APRSISClient {
     nonisolated(unsafe) var onDiagnostic: ((String) -> Void)?
 
     private let configuration: AppSettings
-    private let filterCenter: CLLocationCoordinate2D?
+    private var filterCenter: CLLocationCoordinate2D?
+    private var filterRadiusKilometers: Int
+    private var isLoggedIn = false
+    private var filterSendGeneration: Int?
     private var lastFilterCenter: CLLocationCoordinate2D?
     private var lastFilterRadiusKilometers: Int?
     private var connection: NWConnection?
@@ -34,8 +37,7 @@ actor APRSISClient {
     init(configuration: AppSettings, filterCenter: CLLocationCoordinate2D?) {
         self.configuration = configuration
         self.filterCenter = filterCenter
-        self.lastFilterCenter = filterCenter
-        self.lastFilterRadiusKilometers = configuration.server.filterRadiusKilometers
+        self.filterRadiusKilometers = configuration.server.filterRadiusKilometers
     }
 
     func connect() {
@@ -58,6 +60,9 @@ actor APRSISClient {
         self.connection = connection
         receiveBuffer.removeAll(keepingCapacity: true)
         isReceiving = false
+        isLoggedIn = false
+        lastFilterCenter = nil
+        lastFilterRadiusKilometers = nil
         onStateChange?(.connecting)
         connection.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
@@ -75,6 +80,9 @@ actor APRSISClient {
         connection?.cancel()
         connection = nil
         isReceiving = false
+        isLoggedIn = false
+        lastFilterCenter = nil
+        lastFilterRadiusKilometers = nil
         onStateChange?(.disconnected)
     }
 
@@ -89,16 +97,47 @@ actor APRSISClient {
     }
 
     func updateFilter(center: CLLocationCoordinate2D, radiusKilometers: Int) async throws {
-        if let lastFilterCenter, lastFilterRadiusKilometers == radiusKilometers {
-            let previous = CLLocation(latitude: lastFilterCenter.latitude, longitude: lastFilterCenter.longitude)
-            let current = CLLocation(latitude: center.latitude, longitude: center.longitude)
-            guard current.distance(from: previous) >= 5_000 else { return }
+        // Keep the latest requested filter even while connecting or recovering.
+        filterCenter = center
+        filterRadiusKilometers = radiusKilometers
+        try await flushFilter()
+    }
+
+    func updateFilterCenter(_ center: CLLocationCoordinate2D) async throws {
+        filterCenter = center
+        try await flushFilter()
+    }
+
+    private func flushFilter() async throws {
+        let generation = connectionGeneration
+        guard isLoggedIn, filterSendGeneration != generation else { return }
+        filterSendGeneration = generation
+        defer {
+            if filterSendGeneration == generation { filterSendGeneration = nil }
         }
 
-        try await send("#filter r/\(center.latitude)/\(center.longitude)/\(radiusKilometers)")
-        lastFilterCenter = center
-        lastFilterRadiusKilometers = radiusKilometers
-        onDiagnostic?("Filter updated: r/\(center.latitude)/\(center.longitude)/\(radiusKilometers) km")
+        // Serialize writes so an older completion cannot overwrite a newer filter.
+        while isLoggedIn, generation == connectionGeneration, let center = filterCenter {
+            let radius = filterRadiusKilometers
+            if let lastFilterCenter, lastFilterRadiusKilometers == radius {
+                let previous = CLLocation(latitude: lastFilterCenter.latitude, longitude: lastFilterCenter.longitude)
+                let current = CLLocation(latitude: center.latitude, longitude: center.longitude)
+                guard current.distance(from: previous) >= 5_000 else { return }
+            }
+            do {
+                try await send("#filter r/\(center.latitude)/\(center.longitude)/\(radius)")
+            } catch {
+                if generation == connectionGeneration {
+                    // A broken socket needs reconnecting; its login uses the latest filter.
+                    scheduleReconnect(after: error.localizedDescription)
+                }
+                throw error
+            }
+            guard generation == connectionGeneration else { return }
+            lastFilterCenter = center
+            lastFilterRadiusKilometers = radius
+            onDiagnostic?("Receive filter sent: radius \(radius) km")
+        }
     }
 
     private func handle(_ state: NWConnection.State, generation: Int) async {
@@ -109,14 +148,24 @@ actor APRSISClient {
             onStateChange?(.connected(verified: false))
             startReceivingIfNeeded(generation: generation)
             do {
-                try await send(loginLine)
+                let loginCenter = filterCenter
+                let loginRadius = filterRadiusKilometers
+                try await send(loginLine(center: loginCenter, radiusKilometers: loginRadius))
+                guard generation == connectionGeneration else { return }
+                lastFilterCenter = loginCenter
+                lastFilterRadiusKilometers = loginRadius
+                isLoggedIn = true
+                try await flushFilter()
+                guard generation == connectionGeneration else { return }
                 let locallyVerified = Self.passcode(
                     configuration.identity.passcode,
                     isValidFor: configuration.identity.fullCallsign
                 )
                 onStateChange?(locallyVerified ? .connected(verified: true) : .unverified)
             } catch {
-                scheduleReconnect(after: error.localizedDescription)
+                if generation == connectionGeneration {
+                    scheduleReconnect(after: error.localizedDescription)
+                }
             }
         case .waiting:
             onStateChange?(.connecting)
@@ -133,10 +182,10 @@ actor APRSISClient {
         }
     }
 
-    private var loginLine: String {
+    private func loginLine(center: CLLocationCoordinate2D?, radiusKilometers: Int) -> String {
         var line = "user \(configuration.identity.fullCallsign) pass \(configuration.identity.passcode) vers Beacon73 0.1"
-        if let filterCenter {
-            line += " filter r/\(filterCenter.latitude)/\(filterCenter.longitude)/\(configuration.server.filterRadiusKilometers)"
+        if let center {
+            line += " filter r/\(center.latitude)/\(center.longitude)/\(radiusKilometers)"
         } else {
             // Start with a harmless narrow filter until Core Location supplies a center.
             line += " filter r/0/0/1"
@@ -185,6 +234,9 @@ actor APRSISClient {
         connection?.cancel()
         connection = nil
         isReceiving = false
+        isLoggedIn = false
+        lastFilterCenter = nil
+        lastFilterRadiusKilometers = nil
         receiveBuffer.removeAll(keepingCapacity: true)
 
         let delays = [2, 5, 10, 30, 60]

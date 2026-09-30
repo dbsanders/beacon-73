@@ -129,6 +129,10 @@ final class AppModel {
             storedValue: UserDefaults.standard.string(forKey: Self.experienceModeStorageKey),
             hasConfiguredIdentity: settings.identity.isReady
         )
+        locationService.onAuthorizationChange = { [weak self] in
+            guard let self, !self.locationService.hasLocationPermission else { return }
+            self.disableTransmittingForLocationPermission()
+        }
         locationService.onLocation = { [weak self] location in
             Task { @MainActor in
                 await self?.received(location)
@@ -139,6 +143,10 @@ final class AppModel {
     func startBeaconing() async {
         guard experienceMode == .live else {
             beaconAlertMessage = "Transmitting is disabled in Demo Mode. Set up your own call sign and APRS-IS passcode first."
+            return
+        }
+        guard locationService.hasLocationPermission else {
+            disableTransmittingForLocationPermission(showAlert: true)
             return
         }
         guard settings.identity.isReady else {
@@ -156,8 +164,13 @@ final class AppModel {
         isBeaconing = true
         locationService.start(background: true)
         await startReceiving()
+        guard isBeaconing, locationService.hasLocationPermission else { return }
         scheduleStatusRefresh()
         await liveActivityController.start(with: liveActivityState())
+        guard isBeaconing, locationService.hasLocationPermission else {
+            await endLiveActivity()
+            return
+        }
 
         if let location = locationService.currentLocation {
             await sendBeacon(at: location)
@@ -183,6 +196,10 @@ final class AppModel {
         beaconAlertMessage = nil
         guard experienceMode == .live else {
             beaconAlertMessage = "Transmitting is disabled in Demo Mode. Set up your own call sign and APRS-IS passcode first."
+            return
+        }
+        guard locationService.hasLocationPermission else {
+            disableTransmittingForLocationPermission(showAlert: true)
             return
         }
         guard settings.identity.isReady else {
@@ -229,6 +246,22 @@ final class AppModel {
         return max(0, Int(ceil(beaconNowCooldown - now.timeIntervalSince(mostRecent))))
     }
 
+    private var receiveRadiusAtSettingsOpen: Int?
+
+    var activeReceiveRadiusKilometers: Int {
+        receiveRadiusAtSettingsOpen ?? settings.server.filterRadiusKilometers
+    }
+
+    func beginEditingSettings() {
+        if receiveRadiusAtSettingsOpen == nil {
+            receiveRadiusAtSettingsOpen = settings.server.filterRadiusKilometers
+        }
+    }
+
+    func endEditingSettings() {
+        receiveRadiusAtSettingsOpen = nil
+    }
+
     func saveSettings() {
         settings.save()
         if settings.identity.isReady, !isAPRSISPasscodeValid {
@@ -241,7 +274,7 @@ final class AppModel {
         guard settings.identity.isReady else { return }
         guard let location = locationService.currentLocation else { return }
         if let existingClient = client,
-           clientIdentity != settings.identity || clientServer != settings.server {
+           clientIdentity != settings.identity || clientServer?.hasSameEndpoint(as: settings.server) != true {
             client = nil
             await existingClient.disconnect()
             connectionState = .disconnected
@@ -249,7 +282,7 @@ final class AppModel {
         await connectIfNeeded()
         try? await client?.updateFilter(
             center: location.coordinate,
-            radiusKilometers: settings.server.filterRadiusKilometers
+            radiusKilometers: activeReceiveRadiusKilometers
         )
     }
 
@@ -285,6 +318,7 @@ final class AppModel {
     }
 
     func appDidBecomeActive() async {
+        locationService.refreshAuthorization()
         guard experienceMode == .live, settings.identity.isReady else {
             locationService.stop()
             await endLiveActivity()
@@ -361,7 +395,8 @@ final class AppModel {
         guard client == nil else { return }
         connectionState = .connecting
 
-        let configuration = settings
+        var configuration = settings
+        configuration.server.filterRadiusKilometers = activeReceiveRadiusKilometers
         let newClient = APRSISClient(
             configuration: configuration,
             filterCenter: locationService.currentLocation?.coordinate
@@ -411,15 +446,13 @@ final class AppModel {
     }
 
     private func received(_ location: CLLocation) async {
-        guard experienceMode == .live else { return }
+        guard experienceMode == .live, locationService.hasLocationPermission else { return }
         if settings.identity.isReady {
             await connectIfNeeded()
         }
 
-        try? await client?.updateFilter(
-            center: location.coordinate,
-            radiusKilometers: settings.server.filterRadiusKilometers
-        )
+        // GPS movement must not apply radius edits before Settings is dismissed.
+        try? await client?.updateFilterCenter(location.coordinate)
 
         guard isBeaconing else { return }
         guard location.horizontalAccuracy >= 0,
@@ -437,6 +470,7 @@ final class AppModel {
     }
 
     private func sendBeacon(at location: CLLocation, manually: Bool = false) async {
+        guard locationService.hasLocationPermission, manually || isBeaconing else { return }
         guard !isSendingBeacon else { return }
         isSendingBeacon = true
         defer { isSendingBeacon = false }
@@ -455,6 +489,7 @@ final class AppModel {
                 : "Waiting for APRS-IS to verify the login."
             return
         }
+        guard locationService.hasLocationPermission, manually || isBeaconing else { return }
         guard let client else { return }
         // Enforce spacing for every send path, including starting beaconing.
         let minimumInterval = manually ? Self.beaconNowCooldown : SmartBeaconingPolicy.minimumInterval
@@ -479,6 +514,21 @@ final class AppModel {
             lastBeaconError = error.localizedDescription
         }
         await updateLiveActivity()
+    }
+
+    private func disableTransmittingForLocationPermission(showAlert: Bool = false) {
+        let wasBeaconing = isBeaconing
+        isBeaconing = false
+        nextBeaconAt = nil
+        beaconTask?.cancel()
+        beaconTask = nil
+        if wasBeaconing || showAlert {
+            lastBeaconError = LocationService.permissionRequiredMessage
+            beaconAlertMessage = LocationService.permissionRequiredMessage
+        }
+        Task { [weak self] in
+            await self?.endLiveActivity()
+        }
     }
 
     private func disableTransmittingForInvalidPasscode() {
@@ -521,8 +571,7 @@ final class AppModel {
     }
 
     private func beginLiveLocationSetup() {
-        locationService.requestAlwaysPermission()
-        locationService.start(background: false)
+        locationService.requestPermission()
     }
 
     static func initialExperienceMode(
@@ -610,7 +659,7 @@ final class AppModel {
     }
 
     private func updateLiveActivity() async {
-        guard isBeaconing else { return }
+        guard isBeaconing, locationService.hasLocationPermission else { return }
         await liveActivityController.update(with: liveActivityState())
     }
 

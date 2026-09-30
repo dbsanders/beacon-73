@@ -3,8 +3,52 @@ import Foundation
 struct AppSettings: Codable, Equatable {
     var identity = Identity()
     var beaconing = Beaconing()
-    var display = Display()
+    var display = Display() {
+        didSet {
+            if display.distanceUnit != oldValue.distanceUnit {
+                normalizeReceiveRadius()
+            }
+        }
+    }
     var server = Server()
+
+    static let receiveRadiusChoices = [1, 5] + Array(stride(from: 10, through: 100, by: 10))
+
+    // APRS-IS uses whole kilometers; the UI selects from a fixed set in its unit.
+    var receiveRadius: Int {
+        get {
+            let kilometers = Double(server.filterRadiusKilometers)
+            let value = display.distanceUnit == .miles ? kilometers / 1.609344 : kilometers
+            return Self.nearestReceiveRadius(to: value)
+        }
+        set {
+            let value = Self.nearestReceiveRadius(to: Double(newValue))
+            server.filterRadiusKilometers = display.distanceUnit == .miles
+                ? Int((Double(value) * 1.609344).rounded())
+                : value
+        }
+    }
+
+    var receiveRadiusChoiceIndex: Int {
+        get { Self.receiveRadiusChoices.firstIndex(of: receiveRadius) ?? 0 }
+        set {
+            let index = min(max(newValue, 0), Self.receiveRadiusChoices.count - 1)
+            receiveRadius = Self.receiveRadiusChoices[index]
+        }
+    }
+
+    private static func nearestReceiveRadius(to value: Double) -> Int {
+        receiveRadiusChoices.min {
+            let first = abs(Double($0) - value)
+            let second = abs(Double($1) - value)
+            return first == second ? $0 > $1 : first < second
+        } ?? 1
+    }
+
+    private mutating func normalizeReceiveRadius() {
+        let roundedRadius = receiveRadius
+        receiveRadius = roundedRadius
+    }
 
     struct Identity: Codable, Equatable {
         var callsign = ""
@@ -69,7 +113,9 @@ struct AppSettings: Codable, Equatable {
             var id: Self { self }
         }
 
-        var speedUnit = SpeedUnit.mph
+        var speedUnit: SpeedUnit {
+            distanceUnit == .miles ? .mph : .kilometersPerHour
+        }
         var distanceUnit = DistanceUnit.miles
         var showStations = true
         var showMovingStations = true
@@ -77,7 +123,6 @@ struct AppSettings: Codable, Equatable {
         var showWeatherStations = false
 
         private enum CodingKeys: String, CodingKey {
-            case speedUnit
             case distanceUnit
             case showStations
             case showMovingStations
@@ -89,7 +134,6 @@ struct AppSettings: Codable, Equatable {
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            speedUnit = try container.decodeIfPresent(SpeedUnit.self, forKey: .speedUnit) ?? .mph
             distanceUnit = try container.decodeIfPresent(DistanceUnit.self, forKey: .distanceUnit) ?? .miles
             showStations = try container.decodeIfPresent(Bool.self, forKey: .showStations) ?? true
             showMovingStations = try container.decodeIfPresent(Bool.self, forKey: .showMovingStations) ?? true
@@ -110,6 +154,10 @@ struct AppSettings: Codable, Equatable {
         var host = "rotate.aprs2.net"
         var port = 14580
         var filterRadiusKilometers = 80
+
+        func hasSameEndpoint(as other: Server) -> Bool {
+            host == other.host && port == other.port
+        }
     }
 
     private static let storageKey = "app.settings.v1"
@@ -127,6 +175,7 @@ struct AppSettings: Codable, Equatable {
     }
 
     static func migrateLegacyValues(in settings: inout AppSettings) {
+        settings.normalizeReceiveRadius()
         if settings.beaconing.comment == "Beacon for iOS" {
             settings.beaconing.comment = "Beacon 73 for iOS"
         }

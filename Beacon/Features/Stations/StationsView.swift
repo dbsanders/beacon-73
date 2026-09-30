@@ -56,13 +56,8 @@ struct StationsView: View {
     }
 
     private var formattedReceiveRadius: String {
-        let kilometers = Double(model.settings.server.filterRadiusKilometers)
-        switch model.settings.display.distanceUnit {
-        case .miles:
-            return "\(Int((kilometers * 0.621371).rounded())) miles"
-        case .kilometers:
-            return "\(Int(kilometers)) km"
-        }
+        let unit = model.settings.display.distanceUnit == .miles ? "miles" : "km"
+        return "\(model.settings.receiveRadius) \(unit)"
     }
 
     private var emptyStateDescription: String {

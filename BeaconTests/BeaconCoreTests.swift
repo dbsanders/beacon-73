@@ -1,5 +1,6 @@
 import CoreLocation
 import XCTest
+import Network
 @testable import Beacon
 
 final class BeaconCoreTests: XCTestCase {
@@ -31,6 +32,310 @@ final class BeaconCoreTests: XCTestCase {
         let coordinate = model.displayCoordinate!
         XCTAssertEqual(coordinate.latitude, 33.8003, accuracy: 0.000_001)
         XCTAssertEqual(coordinate.longitude, -117.8827, accuracy: 0.000_001)
+    }
+
+    @MainActor
+    func testBeaconRequestsRequireLocationPermissionEvenWithCachedPosition() async {
+        for status: CLAuthorizationStatus in [.notDetermined, .denied, .restricted] {
+            let model = AppModel()
+            model.experienceMode = .live
+            model.settings.identity.callsign = "K6BAT"
+            model.settings.identity.passcode = "11925"
+            model.locationService.authorizationDidChange(to: status)
+            // A previously obtained fix must never bypass the permission gate.
+            model.locationService.currentLocation = CLLocation(latitude: 33.7, longitude: -117.7)
+
+            await model.startBeaconing()
+            XCTAssertFalse(model.isBeaconing)
+            XCTAssertNil(model.nextBeaconAt)
+            XCTAssertEqual(model.beaconAlertMessage, LocationService.permissionRequiredMessage)
+
+            await model.beaconNow()
+            XCTAssertNil(model.lastBeaconAt)
+            XCTAssertTrue(model.trail.isEmpty)
+            XCTAssertEqual(model.connectionState, .disconnected)
+            XCTAssertEqual(model.beaconAlertMessage, LocationService.permissionRequiredMessage)
+        }
+    }
+
+    @MainActor
+    func testRevokingLocationStopsBeaconingAndRestoringDoesNotResume() {
+        for status: CLAuthorizationStatus in [.denied, .restricted] {
+            let model = AppModel()
+            model.experienceMode = .live
+            model.locationService.authorizationDidChange(to: .authorizedAlways)
+            model.locationService.currentLocation = CLLocation(latitude: 33.7, longitude: -117.7)
+            model.isBeaconing = true
+            model.nextBeaconAt = .now.addingTimeInterval(60)
+
+            model.locationService.authorizationDidChange(to: status)
+            XCTAssertFalse(model.isBeaconing)
+            XCTAssertNil(model.nextBeaconAt)
+            XCTAssertNil(model.locationService.currentLocation)
+            XCTAssertEqual(model.beaconAlertMessage, LocationService.permissionRequiredMessage)
+
+            model.locationService.authorizationDidChange(to: .authorizedAlways)
+            XCTAssertFalse(model.isBeaconing)
+            XCTAssertNil(model.nextBeaconAt)
+            XCTAssertNil(model.locationService.currentLocation)
+        }
+    }
+
+    @MainActor
+    func testLocationPermissionStates() {
+        let service = LocationService()
+        for status: CLAuthorizationStatus in [.notDetermined, .denied, .restricted] {
+            service.authorizationDidChange(to: status)
+            XCTAssertFalse(service.hasLocationPermission)
+        }
+        for status: CLAuthorizationStatus in [.authorizedWhenInUse, .authorizedAlways] {
+            service.authorizationDidChange(to: status)
+            XCTAssertTrue(service.hasLocationPermission)
+            XCTAssertNil(service.errorMessage)
+        }
+    }
+
+    @MainActor
+    func testLateLocationCallbackAfterDenialIsIgnored() {
+        let service = LocationService()
+        service.authorizationDidChange(to: .denied)
+        var receivedLocation = false
+        service.onLocation = { _ in receivedLocation = true }
+        service.locationManager(CLLocationManager(), didUpdateLocations: [
+            CLLocation(latitude: 33.7, longitude: -117.7)
+        ])
+        XCTAssertNil(service.currentLocation)
+        XCTAssertFalse(receivedLocation)
+    }
+
+    @MainActor
+    func testBackgroundTrackingWithEitherGrantedPermission() {
+        for status: CLAuthorizationStatus in [.authorizedWhenInUse, .authorizedAlways] {
+            let manager = TestLocationManager()
+            manager.testAuthorizationStatus = status
+            let service = LocationService(manager: manager)
+
+            service.start(background: true)
+            XCTAssertTrue(manager.isUpdating)
+            XCTAssertTrue(manager.allowsBackgroundLocationUpdates)
+            XCTAssertTrue(manager.showsBackgroundLocationIndicator)
+            XCTAssertFalse(manager.pausesLocationUpdatesAutomatically)
+            XCTAssertEqual(manager.alwaysRequests, 0)
+
+            service.stop()
+            XCTAssertFalse(manager.isUpdating)
+            XCTAssertFalse(manager.allowsBackgroundLocationUpdates)
+            XCTAssertFalse(manager.showsBackgroundLocationIndicator)
+            XCTAssertTrue(manager.pausesLocationUpdatesAutomatically)
+
+            service.start(background: false)
+            XCTAssertTrue(manager.isUpdating)
+            XCTAssertFalse(manager.allowsBackgroundLocationUpdates)
+            XCTAssertFalse(manager.showsBackgroundLocationIndicator)
+            XCTAssertTrue(manager.pausesLocationUpdatesAutomatically)
+        }
+    }
+
+    @MainActor
+    func testPermissionRequestDoesNotEscalateToAlways() {
+        let manager = TestLocationManager()
+        let service = LocationService(manager: manager)
+        service.requestPermission()
+        XCTAssertEqual(manager.whenInUseRequests, 1)
+        XCTAssertFalse(manager.isUpdating)
+
+        manager.testAuthorizationStatus = .authorizedWhenInUse
+        service.locationManagerDidChangeAuthorization(manager)
+        XCTAssertTrue(manager.isUpdating)
+        XCTAssertFalse(manager.allowsBackgroundLocationUpdates)
+        service.requestPermission()
+        XCTAssertEqual(manager.alwaysRequests, 0)
+    }
+
+    @MainActor
+    func testRevocationStopsBackgroundTrackingWithoutRestartOnRestoration() {
+        let manager = TestLocationManager()
+        manager.testAuthorizationStatus = .authorizedWhenInUse
+        let service = LocationService(manager: manager)
+        service.start(background: true)
+        service.currentLocation = CLLocation(latitude: 33.7, longitude: -117.7)
+
+        manager.testAuthorizationStatus = .denied
+        service.locationManagerDidChangeAuthorization(manager)
+        XCTAssertFalse(manager.isUpdating)
+        XCTAssertFalse(manager.allowsBackgroundLocationUpdates)
+        XCTAssertFalse(manager.showsBackgroundLocationIndicator)
+        XCTAssertNil(service.currentLocation)
+
+        manager.testAuthorizationStatus = .authorizedWhenInUse
+        service.locationManagerDidChangeAuthorization(manager)
+        XCTAssertFalse(manager.isUpdating)
+        XCTAssertFalse(manager.allowsBackgroundLocationUpdates)
+    }
+
+    func testReceiveRadiusStepsInSelectedUnits() throws {
+        var settings = AppSettings()
+        settings.display.distanceUnit = .miles
+        settings.receiveRadius = 50
+        XCTAssertEqual(settings.server.filterRadiusKilometers, 80)
+        for expected in stride(from: 60, through: 100, by: 10) {
+            settings.receiveRadius += 10
+            XCTAssertEqual(settings.receiveRadius, expected)
+        }
+        for expected in stride(from: 90, through: 10, by: -10) {
+            settings.receiveRadius -= 10
+            XCTAssertEqual(settings.receiveRadius, expected)
+        }
+        settings.display.distanceUnit = .kilometers
+        XCTAssertEqual(settings.receiveRadius, 20)
+        XCTAssertEqual(settings.server.filterRadiusKilometers, 20)
+        settings.receiveRadius = 80
+        settings.receiveRadius += 10
+        XCTAssertEqual(settings.server.filterRadiusKilometers, 90)
+        settings.receiveRadius -= 10
+        XCTAssertEqual(settings.server.filterRadiusKilometers, 80)
+        let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(restored.receiveRadius, 80)
+    }
+
+    func testReceiveRadiusChoicesIncludeSmallRadiiInBothDirections() {
+        for unit in AppSettings.Display.DistanceUnit.allCases {
+            var settings = AppSettings()
+            settings.display.distanceUnit = unit
+            settings.receiveRadiusChoiceIndex = 0
+            for radius in AppSettings.receiveRadiusChoices {
+                XCTAssertEqual(settings.receiveRadius, radius)
+                settings.receiveRadiusChoiceIndex += 1
+            }
+            XCTAssertEqual(settings.receiveRadius, 100)
+            for radius in AppSettings.receiveRadiusChoices.reversed() {
+                XCTAssertEqual(settings.receiveRadius, radius)
+                settings.receiveRadiusChoiceIndex -= 1
+            }
+            XCTAssertEqual(settings.receiveRadius, 1)
+        }
+    }
+
+    func testUnitChangeSnapsActualFilterToNearestAllowedRadius() {
+        var settings = AppSettings()
+        settings.display.distanceUnit = .kilometers
+        settings.receiveRadius = 90
+        settings.display.distanceUnit = .miles
+        XCTAssertEqual(settings.receiveRadius, 60)
+        XCTAssertEqual(settings.server.filterRadiusKilometers, 97)
+        settings.display.distanceUnit = .kilometers
+        XCTAssertEqual(settings.receiveRadius, 100)
+        XCTAssertEqual(settings.server.filterRadiusKilometers, 100)
+
+        settings.receiveRadius = 1
+        settings.display.distanceUnit = .miles
+        XCTAssertEqual(settings.receiveRadius, 1)
+        XCTAssertEqual(settings.server.filterRadiusKilometers, 2)
+        settings.receiveRadius = 500
+        settings.display.distanceUnit = .kilometers
+        XCTAssertEqual(settings.receiveRadius, 100)
+        XCTAssertEqual(settings.server.filterRadiusKilometers, 100)
+    }
+
+    func testLegacyReceiveRadiusIsNormalizedOnLoad() {
+        var settings = AppSettings()
+        settings.display.distanceUnit = .kilometers
+        settings.server.filterRadiusKilometers = 85
+        AppSettings.migrateLegacyValues(in: &settings)
+        XCTAssertEqual(settings.receiveRadius, 90)
+        XCTAssertEqual(settings.server.filterRadiusKilometers, 90)
+        for unit in AppSettings.Display.DistanceUnit.allCases {
+            settings.display.distanceUnit = unit
+            settings.server.filterRadiusKilometers = 500
+            AppSettings.migrateLegacyValues(in: &settings)
+            XCTAssertEqual(settings.receiveRadius, 100)
+            XCTAssertEqual(settings.server.filterRadiusKilometers, unit == .miles ? 161 : 100)
+        }
+    }
+
+    func testUnifiedUnitsPreserveLegacyDistancePreference() throws {
+        var display = try JSONDecoder().decode(
+            AppSettings.Display.self,
+            from: Data(#"{"speedUnit":"mph","distanceUnit":"Kilometers"}"#.utf8)
+        )
+        XCTAssertEqual(display.distanceUnit, .kilometers)
+        XCTAssertEqual(display.speedUnit, .kilometersPerHour)
+        let restored = try JSONDecoder().decode(
+            AppSettings.Display.self, from: JSONEncoder().encode(display)
+        )
+        XCTAssertEqual(restored, display)
+        display.distanceUnit = .miles
+        XCTAssertEqual(display.speedUnit, .mph)
+    }
+
+    @MainActor
+    func testRadiusEditsAreDeferredUntilLeavingSettings() {
+        let model = AppModel()
+        model.settings.display.distanceUnit = .kilometers
+        model.settings.receiveRadiusChoiceIndex = 0
+        model.beginEditingSettings()
+        for _ in 0..<10 {
+            model.settings.receiveRadiusChoiceIndex += 1
+            XCTAssertEqual(model.activeReceiveRadiusKilometers, 1)
+        }
+        XCTAssertEqual(model.settings.receiveRadius, 90)
+        model.endEditingSettings()
+        XCTAssertEqual(model.activeReceiveRadiusKilometers, 90)
+    }
+
+    func testReceiveRadiusDoesNotChangeServerEndpoint() {
+        let original = AppSettings.Server()
+        var changed = original
+        changed.filterRadiusKilometers = 10
+        XCTAssertTrue(original.hasSameEndpoint(as: changed))
+        changed.host = "localhost"
+        XCTAssertFalse(original.hasSameEndpoint(as: changed))
+        changed = original
+        changed.port += 1
+        XCTAssertFalse(original.hasSameEndpoint(as: changed))
+    }
+
+    func testReceiveFilterUpdatesOnSameConnectionAndSurvivesReconnect() async throws {
+        let server = try LocalAPRSServer()
+        let port = try await server.start()
+        var settings = AppSettings()
+        settings.identity.callsign = "N0CALL"
+        settings.identity.passcode = "-1"
+        settings.server.host = "127.0.0.1"
+        settings.server.port = Int(port)
+        let center = CLLocationCoordinate2D(latitude: 33, longitude: -117)
+        let client = APRSISClient(configuration: settings, filterCenter: center)
+        do {
+            // A pending edit must be in the first login, not sent before login.
+            try await client.updateFilter(center: center, radiusKilometers: 30)
+            await client.connect()
+            var lines = try await server.waitForLines(1)
+            XCTAssertTrue(lines[0].hasPrefix("user "))
+            XCTAssertTrue(lines[0].hasSuffix(" filter r/33.0/-117.0/30"))
+            try await client.updateFilter(center: center, radiusKilometers: 40)
+            lines = try await server.waitForLines(2)
+            XCTAssertEqual(lines[1], "#filter r/33.0/-117.0/40")
+            try await client.updateFilter(center: center, radiusKilometers: 50)
+            lines = try await server.waitForLines(3)
+            XCTAssertEqual(lines[2], "#filter r/33.0/-117.0/50")
+            let connectionsBeforeDrop = await server.connectionCount
+            XCTAssertEqual(connectionsBeforeDrop, 1)
+
+            await server.closeConnections()
+            let newCenter = CLLocationCoordinate2D(latitude: 34, longitude: -118)
+            // May race socket failure; either way recovery must use this filter.
+            try? await client.updateFilter(center: newCenter, radiusKilometers: 60)
+            lines = try await server.waitForLogins(2)
+            XCTAssertTrue(lines.last(where: { $0.hasPrefix("user ") })?.hasSuffix(" filter r/34.0/-118.0/60") == true)
+            let connectionsAfterDrop = await server.connectionCount
+            XCTAssertEqual(connectionsAfterDrop, 2)
+            await client.disconnect()
+            await server.stop()
+        } catch {
+            await client.disconnect()
+            await server.stop()
+            throw error
+        }
     }
 
     func testInternationalAmateurCallsignValidation() {
@@ -522,5 +827,112 @@ final class BeaconCoreTests: XCTestCase {
         )
         XCTAssertTrue(decision.shouldBeacon)
         XCTAssertEqual(decision.reason, "First position")
+    }
+}
+
+private final class TestLocationManager: CLLocationManager {
+    var testAuthorizationStatus: CLAuthorizationStatus = .notDetermined
+    var isUpdating = false
+    var whenInUseRequests = 0
+    var alwaysRequests = 0
+
+    override var authorizationStatus: CLAuthorizationStatus { testAuthorizationStatus }
+    override var allowsBackgroundLocationUpdates: Bool {
+        get { backgroundUpdates }
+        set { backgroundUpdates = newValue }
+    }
+    override var showsBackgroundLocationIndicator: Bool {
+        get { backgroundIndicator }
+        set { backgroundIndicator = newValue }
+    }
+    override var pausesLocationUpdatesAutomatically: Bool {
+        get { automaticPausing }
+        set { automaticPausing = newValue }
+    }
+    private var automaticPausing = true
+    private var backgroundUpdates = false
+    private var backgroundIndicator = false
+
+    override func startUpdatingLocation() { isUpdating = true }
+    override func stopUpdatingLocation() { isUpdating = false }
+    override func requestWhenInUseAuthorization() { whenInUseRequests += 1 }
+    override func requestAlwaysAuthorization() { alwaysRequests += 1 }
+}
+
+// Local TCP peer: exercises real socket ordering and recovery without APRS-IS traffic.
+private actor LocalAPRSServer {
+    enum Failure: Error { case timedOut(String) }
+    private let listener: NWListener
+    private var connections: [NWConnection] = []
+    private var buffers: [Int: Data] = [:]
+    private var lines: [String] = []
+    private(set) var connectionCount = 0
+
+    init() throws {
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        listener = try NWListener(using: parameters)
+    }
+
+    func start() async throws -> UInt16 {
+        listener.newConnectionHandler = { [weak self] connection in
+            Task { await self?.accept(connection) }
+        }
+        listener.start(queue: DispatchQueue(label: "BeaconTests.listener"))
+        for _ in 0..<200 {
+            if let port = listener.port, port.rawValue > 0 { return port.rawValue }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        listener.cancel()
+        throw Failure.timedOut("Local peer did not become ready")
+    }
+
+    private func accept(_ connection: NWConnection) {
+        let id = connectionCount
+        connectionCount += 1
+        connections.append(connection)
+        connection.start(queue: DispatchQueue(label: "BeaconTests.peer"))
+        receive(connection, id: id)
+    }
+
+    private func receive(_ connection: NWConnection, id: Int) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self] data, _, complete, error in
+            Task { await self?.received(data, connection: connection, id: id, ended: complete || error != nil) }
+        }
+    }
+
+    private func received(_ data: Data?, connection: NWConnection, id: Int, ended: Bool) {
+        if let data {
+            var buffer = buffers[id] ?? Data()
+            lines += APRSISClient.extractLines(from: &buffer, appending: data)
+            buffers[id] = buffer
+        }
+        if !ended { receive(connection, id: id) }
+    }
+
+    func waitForLines(_ count: Int) async throws -> [String] {
+        for _ in 0..<400 {
+            if lines.count >= count { return lines }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        throw Failure.timedOut("Expected \(count) lines; got \(lines.count), connections \(connectionCount)")
+    }
+
+    func waitForLogins(_ count: Int) async throws -> [String] {
+        for _ in 0..<400 {
+            if lines.filter({ $0.hasPrefix("user ") }).count >= count { return lines }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        throw Failure.timedOut("Expected \(count) logins; got \(lines.filter { $0.hasPrefix("user ") }.count), total lines \(lines.count), connections \(connectionCount)")
+    }
+
+    func closeConnections() {
+        for connection in connections { connection.cancel() }
+        connections.removeAll()
+    }
+
+    func stop() {
+        listener.cancel()
+        closeConnections()
     }
 }

@@ -35,10 +35,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Beacon 73 uses your location while beaconing so your APRS position continues to update when the screen is locked.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Beacon 73 uses your location to show your position and transmit APRS beacons you start.</string>
+	<string>Beacon 73 uses your location to show your position and transmit APRS beacons you start. Auto-beaconing continues while the screen is locked or you use another app, until you stop it.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
