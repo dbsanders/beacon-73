@@ -4,6 +4,81 @@ import Network
 @testable import Beacon
 
 final class BeaconCoreTests: XCTestCase {
+    func testThemeDefaultsToDarkForExistingSettings() throws {
+        let display = try JSONDecoder().decode(AppSettings.Display.self, from: Data("{}".utf8))
+        XCTAssertEqual(display.theme, .dark)
+        XCTAssertEqual(AppSettings.Display().theme, .dark)
+    }
+
+    func testThemePersistsAlongsideOtherSettings() throws {
+        for theme in AppSettings.Display.Theme.allCases {
+            var settings = AppSettings()
+            settings.display.theme = theme
+            settings.display.showFixedStations = true
+            settings.identity.callsign = "N0TEST"
+            let restored = try JSONDecoder().decode(
+                AppSettings.self, from: JSONEncoder().encode(settings)
+            )
+            XCTAssertEqual(restored, settings)
+            XCTAssertEqual(restored.display.theme, theme)
+        }
+    }
+
+    @MainActor
+    func testStationsExpireAt35MinutesWithoutNewPackets() throws {
+        let model = AppModel()
+        model.experienceMode = .live
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func station(_ callsign: String, age: TimeInterval) throws -> APRSStation {
+            try XCTUnwrap(APRSParser.station(
+                from: "\(callsign)>APRS:!3348.00N/11753.00W-Test",
+                now: now.addingTimeInterval(-age)
+            ))
+        }
+        model.stations = try [
+            station("RECENT", age: 60),
+            station("JUSTIN", age: 35 * 60 - 1),
+            station("BOUNDARY", age: 35 * 60),
+            station("EXPIRED", age: 35 * 60 + 1)
+        ]
+
+        model.expireStations(at: now)
+        XCTAssertEqual(model.stations.map(\.callsign), ["RECENT", "JUSTIN"])
+        XCTAssertEqual(model.stationsWithinRadius.map(\.callsign), ["RECENT", "JUSTIN"])
+
+        // Expiration proceeds while receiving and beaconing are both inactive.
+        model.expireStations(at: now.addingTimeInterval(1))
+        XCTAssertEqual(model.stations.map(\.callsign), ["RECENT"])
+        model.expireStations(at: now.addingTimeInterval(35 * 60))
+        XCTAssertTrue(model.nearbyStations.isEmpty)
+        XCTAssertEqual(model.hiddenNearbyStationCount, 0)
+    }
+
+    @MainActor
+    func testStationUpdatesRefreshExpirationAndKeepNewestFirst() throws {
+        let model = AppModel()
+        model.experienceMode = .live
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func station(_ callsign: String, heardAt: Date) throws -> APRSStation {
+            try XCTUnwrap(APRSParser.station(
+                from: "\(callsign)>APRS:!3348.00N/11753.00W-Test", now: heardAt
+            ))
+        }
+        model.upsert(try station("OLDER", heardAt: now.addingTimeInterval(-2_000)), at: now)
+        model.upsert(try station("NEWER", heardAt: now.addingTimeInterval(-100)), at: now)
+        XCTAssertEqual(model.stations.map(\.callsign), ["NEWER", "OLDER"])
+
+        model.upsert(try station("OLDER", heardAt: now), at: now)
+        XCTAssertEqual(model.stations.map(\.callsign), ["OLDER", "NEWER"])
+        model.expireStations(at: now.addingTimeInterval(2_000))
+        XCTAssertEqual(model.stations.map(\.callsign), ["OLDER"])
+
+        // A station that expired can reappear on its next position report.
+        let later = now.addingTimeInterval(2_100)
+        model.upsert(try station("NEWER", heardAt: later), at: later)
+        XCTAssertEqual(model.stations.map(\.callsign), ["NEWER"])
+    }
+
     @MainActor
     func testFirstLaunchExperienceChoice() {
         XCTAssertEqual(

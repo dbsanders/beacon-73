@@ -101,6 +101,12 @@ struct AppSettings: Codable, Equatable {
     }
 
     struct Display: Codable, Equatable {
+        enum Theme: String, Codable, CaseIterable, Identifiable {
+            case dark = "Dark"
+            case light = "Light"
+            var id: Self { self }
+        }
+
         enum SpeedUnit: String, Codable, CaseIterable, Identifiable {
             case mph = "mph"
             case kilometersPerHour = "km/h"
@@ -117,12 +123,14 @@ struct AppSettings: Codable, Equatable {
             distanceUnit == .miles ? .mph : .kilometersPerHour
         }
         var distanceUnit = DistanceUnit.miles
+        var theme = Theme.dark
         var showStations = true
         var showMovingStations = true
         var showFixedStations = false
         var showWeatherStations = false
 
         private enum CodingKeys: String, CodingKey {
+            case theme
             case distanceUnit
             case showStations
             case showMovingStations
@@ -134,6 +142,7 @@ struct AppSettings: Codable, Equatable {
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
+            theme = try container.decodeIfPresent(Theme.self, forKey: .theme) ?? .dark
             distanceUnit = try container.decodeIfPresent(DistanceUnit.self, forKey: .distanceUnit) ?? .miles
             showStations = try container.decodeIfPresent(Bool.self, forKey: .showStations) ?? true
             showMovingStations = try container.decodeIfPresent(Bool.self, forKey: .showMovingStations) ?? true

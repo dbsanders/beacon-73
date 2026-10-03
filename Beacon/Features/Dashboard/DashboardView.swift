@@ -352,6 +352,7 @@ private struct APRSConnectionIndicator: View {
 
 private struct AutoBeaconButton: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isUpdating = false
     let showSettings: () -> Void
@@ -362,6 +363,14 @@ private struct AutoBeaconButton: View {
 
     private var isManual: Bool { model.settings.beaconing.mode == .manual }
     private var isOn: Bool { model.isBeaconing && !isManual && model.locationService.hasLocationPermission }
+    private var activeColor: Color {
+        colorScheme == .light ? Color(red: 0.05, green: 0.48, blue: 0.18) : .green
+    }
+    private var inactiveColor: Color {
+        colorScheme == .light
+            ? Color(red: 0.7, green: 0.35, blue: 0)
+            : Color(red: 1, green: 0.65, blue: 0)
+    }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.25)) { status in
@@ -375,7 +384,7 @@ private struct AutoBeaconButton: View {
                         Button(action: activateBeaconButton) {
                             Image(systemName: "power")
                                 .font(.system(size: 42, weight: .semibold))
-                                .foregroundStyle(isLit ? Color.green : Color(red: 1, green: 0.65, blue: 0))
+                                .foregroundStyle(isLit ? activeColor : inactiveColor)
                                 .frame(width: 108, height: 108)
                         }
                         .buttonStyle(PhysicalBeaconButtonStyle(isOn: isLit, pulse: pulse))
@@ -412,7 +421,7 @@ private struct AutoBeaconButton: View {
                              : (!model.locationService.hasLocationPermission ? "Location access required" : isManual ? "Manual beaconing" : !hasCallsign ? "Set your callsign"
                                 : "Auto-beaconing is \(isOn ? "ON" : "OFF")"))
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(isOn ? Color.green : Color.secondary)
+                            .foregroundStyle(isOn ? activeColor : Color.secondary)
                             .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -479,7 +488,7 @@ private struct PhysicalBeaconButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(isOn ? Color.green : Color.white.opacity(0.8))
+            .foregroundStyle(isOn ? Color.green : Color.primary.opacity(0.8))
             .shadow(color: isOn ? .green.opacity(0.2) : .clear, radius: 3)
             .background {
                 Circle()

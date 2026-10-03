@@ -52,7 +52,7 @@ struct StationsView: View {
     }
 
     private var receiveRadiusDescription: String {
-        "Stations within \(formattedReceiveRadius) of your location"
+        "Recent stations heard within \(formattedReceiveRadius) of your location"
     }
 
     private var formattedReceiveRadius: String {
@@ -70,6 +70,6 @@ struct StationsView: View {
         if model.receivedPacketCount == 0 {
             return "Ready, but no APRS-IS packets have arrived yet. The app will reconnect automatically if the stream drops."
         }
-        return "Received \(model.receivedPacketCount) APRS packets; \(model.unsupportedPacketCount) did not contain a supported position. No decoded stations are currently within \(formattedReceiveRadius)."
+        return "Received \(model.receivedPacketCount) APRS packets; \(model.unsupportedPacketCount) did not contain a supported position. No stations heard in the last 35 minutes are currently within \(formattedReceiveRadius)."
     }
 }

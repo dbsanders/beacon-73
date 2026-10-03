@@ -201,6 +201,16 @@ struct SettingsView: View {
                     Toggle("Weather stations", isOn: $model.settings.display.showWeatherStations)
                 }
 
+                Section("Appearance") {
+                    Picker("Theme", selection: $model.settings.display.theme) {
+                        ForEach(AppSettings.Display.Theme.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: model.settings.display.theme) { _, _ in
+                        model.settings.save()
+                    }
+                }
+
                 Section("Units") {
                     Picker("Distance", selection: $model.settings.display.distanceUnit) {
                         ForEach(AppSettings.Display.DistanceUnit.allCases) { Text($0.rawValue).tag($0) }

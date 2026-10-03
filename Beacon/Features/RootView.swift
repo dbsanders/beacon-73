@@ -30,7 +30,7 @@ struct RootView: View {
             }
         }
         .tint(.blue)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(model.settings.display.theme == .light ? .light : .dark)
         .task {
             await model.prepareForLaunch()
             guard model.experienceMode != .undecided else { return }
@@ -38,6 +38,17 @@ struct RootView: View {
                 model.locationService.requestPermission()
             }
             await model.startReceiving()
+        }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                model.expireStations()
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    return
+                }
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             Task {

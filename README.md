@@ -9,13 +9,14 @@ Version **1.1.1** source is tagged `appstore/1.1.1`. The earlier submitted 1.1 s
 - Adaptive home-screen map with a shared map and beacon-control card, plus last/next beacon status.
 - Full-screen map on tap and a map-only home screen in landscape.
 - Nearby station symbols and call signs that adapt to overlap on screen: full labels where space permits, icons where labels crowd, and dots where icons overlap too much.
-- Stations list, station details, and filters for moving, fixed, and weather stations.
+- Stations list sorted by last heard (newest first), station details, and filters for moving, fixed, and weather stations. Live stations expire from the list and map after 35 minutes without a decoded position update, even when no new packets arrive. Expiration is checked every second while the app is active and when returning to the foreground.
 - Track map showing the most recent 30 successfully transmitted positions for the current app session.
 - Smart, Timed, and Manual beaconing modes.
 - Live Activity showing callsign, connection status, and last/next beacon timing while beaconing is active.
 - APRS symbol selection, custom beacon messages, receive radius, and connection diagnostics.
 - APRS-IS TCP transport, TNC2 position transmission, and parsing of uncompressed, compressed, and Mic-E positions.
 - Demo Mode with simulated stations and transmission disabled.
+- Light and Dark themes under Settings → Appearance. Changes apply immediately and are remembered across launches; Dark remains the default.
 
 Settings → Units provides one Miles/Kilometers choice for displayed distances and speeds (mph/km/h). Existing distance preferences are preserved when upgrading. The station receive radius offers 1, 5, and then 10 through 100 in steps of 10, in miles or kilometers. Changing units snaps the converted radius to the nearest allowed value (ties round up), and older saved radii are normalized the same way. APRS-IS receives the selected radius converted to whole kilometers. Leaving Settings applies the final radius with a filter update on the existing connection; callsign/passcode or server host/port changes still reconnect. Changes made while connecting are queued, and connection recovery uses the latest filter.
 

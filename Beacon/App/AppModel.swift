@@ -6,6 +6,7 @@ import Observation
 @Observable
 final class AppModel {
     static let beaconNowCooldown: TimeInterval = 10
+    static let stationLifetime: TimeInterval = 35 * 60
 
     enum ExperienceMode: String {
         case undecided
@@ -318,6 +319,7 @@ final class AppModel {
     }
 
     func appDidBecomeActive() async {
+        expireStations()
         locationService.refreshAuthorization()
         guard experienceMode == .live, settings.identity.isReady else {
             locationService.stop()
@@ -621,7 +623,14 @@ final class AppModel {
         }
     }
 
-    private func upsert(_ station: APRSStation) {
+    func expireStations(at now: Date = .now) {
+        let cutoff = now.addingTimeInterval(-Self.stationLifetime)
+        guard stations.contains(where: { $0.lastHeard <= cutoff }) else { return }
+        stations.removeAll { $0.lastHeard <= cutoff }
+    }
+
+    func upsert(_ station: APRSStation, at now: Date = .now) {
+        expireStations(at: now)
         stations.removeAll { $0.callsign == station.callsign }
         stations.append(station)
         stations.sort { $0.lastHeard > $1.lastHeard }
