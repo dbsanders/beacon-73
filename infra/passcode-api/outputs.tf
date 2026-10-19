@@ -29,8 +29,18 @@ output "fcc_import_github_role_arn" {
 }
 
 output "dynamodb_table_name" {
-  description = "Table containing expiring rate-limit and attestation records."
+  description = "Table containing expiring request records and retained unique-callsign records."
   value       = aws_dynamodb_table.requests.name
+}
+
+output "weekly_report_function_name" {
+  description = "Lambda function that sends the weekly passcode callsign report."
+  value       = aws_lambda_function.weekly_report.function_name
+}
+
+output "weekly_report_topic_arn" {
+  description = "SNS topic used to deliver the weekly passcode callsign report."
+  value       = aws_sns_topic.weekly_report.arn
 }
 
 output "website_bucket_name" {

@@ -118,6 +118,23 @@ variable "log_retention_days" {
   }
 }
 
+variable "weekly_report_email" {
+  description = "Email address subscribed to the weekly passcode callsign report."
+  type        = string
+  default     = "support@beacon73.com"
+
+  validation {
+    condition     = can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.weekly_report_email))
+    error_message = "weekly_report_email must be a valid email address."
+  }
+}
+
+variable "weekly_report_time_zone" {
+  description = "IANA time zone used for the Monday report schedule and reporting period."
+  type        = string
+  default     = "America/Los_Angeles"
+}
+
 variable "tags" {
   description = "Additional tags applied to AWS resources."
   type        = map(string)

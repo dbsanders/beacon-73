@@ -7,6 +7,7 @@ This Terraform root manages the AWS infrastructure for Beacon 73: the serverless
 - **API Gateway HTTP API** exposes `POST /v1/passcode` and applies a stage-wide burst/rate ceiling.
 - **Lambda (Python 3.12, arm64)** validates requests and calculates the passcode.
 - **DynamoDB on-demand** stores short-lived rate counters and attestation audit records in one encrypted table.
+- **EventBridge Scheduler and a reporting Lambda** send a Monday-morning email containing callsigns first seen during the previous week and the running unique total.
 - **S3** privately stores the FCC weekly archive and a compact, privacy-minimized callsign index split into gzip-compressed shards.
 - **A scheduled GitHub Actions workflow** downloads the official FCC archive, uploads it with short-lived AWS credentials, and invokes a Lambda that rebuilds the index. The new manifest is published only after every shard is ready.
 - **CloudWatch Logs** retains structured Lambda and API access logs for 30 days by default. Access logs omit request bodies and source IPs.
@@ -56,6 +57,10 @@ When the current FCC dataset contains the callsign, the response includes the pu
 
 Each accepted request creates an attestation record containing the normalized callsign, attestation version, time, and keyed hashes of the source IP and user agent. The raw source IP, raw user agent, and passcode are not stored. Attestation records expire after 90 days by default. DynamoDB TTL deletion is asynchronous, so AWS may retain an expired record briefly after its expiration timestamp.
 
+The weekly reporter retains one deduplicated keyed callsign hash with its first request time. These records do not expire because they provide the running unique total; they contain no readable callsign, passcode, network hash, user-agent hash, or individual request history. On its first run, the reporter backfills this index from all attestation records that remain in the table.
+
+For each newly seen callsign in a weekly report, the privacy-minimized FCC index supplies the public licensee name. Callsigns absent from the active U.S. FCC dataset are labeled accordingly.
+
 Rate-limit entries use only a keyed source-IP hash and fixed-window timestamp. They expire after the window plus a one-day cleanup buffer. The default limits are 5 accepted passcode attempts and 30 callsign lookups per source IP per hour. Invalid requests that fail before callsign validation do not consume these quotas; API Gateway still protects the service-wide request rate.
 
 ## Prerequisites
@@ -75,6 +80,18 @@ AWS_PROFILE=beacon-prod terraform init -backend-config=backend.hcl
 AWS_PROFILE=beacon-prod terraform plan -out=tfplan
 AWS_PROFILE=beacon-prod terraform apply tfplan
 AWS_PROFILE=beacon-prod terraform output -raw passcode_endpoint
+```
+
+Applying the weekly-report resources sends a subscription-confirmation message to `support@beacon73.com` by default. Confirm that subscription before the first scheduled report. The report runs every Monday at 9:00 AM in `America/Los_Angeles` and covers the previous completed Monday-through-Sunday period. Override the recipient or time zone with `weekly_report_email` and `weekly_report_time_zone`.
+
+To test report generation after deployment, invoke the reporter manually. This sends an actual email and also backfills retained unique-callsign records:
+
+```sh
+AWS_PROFILE=beacon-prod aws lambda invoke \
+  --region us-west-2 \
+  --function-name "$(AWS_PROFILE=beacon-prod terraform output -raw weekly_report_function_name)" \
+  /tmp/beacon73-weekly-report.json
+cat /tmp/beacon73-weekly-report.json
 ```
 
 Website files live in `../../website`. After publishing a time-sensitive update, invalidate the CloudFront cache with the managed distribution output:
@@ -118,6 +135,8 @@ lookup_rate_limit_requests = 30
 rate_limit_window_seconds  = 3600
 attestation_retention_days = 90
 log_retention_days         = 30
+weekly_report_email        = "support@beacon73.com"
+weekly_report_time_zone    = "America/Los_Angeles"
 ```
 
 Smoke-test the deployed endpoint:
@@ -149,8 +168,9 @@ python -m unittest discover -s backend -p 'test_*.py'
 ## Security and privacy notes
 
 - The Lambda role can only write items to this stack's DynamoDB table and its own log group.
-- The API Lambda can read only the published manifest and processed FCC shards. The importer can write only to the private FCC bucket and its own logs.
+- The API and reporting Lambdas can read only the published privacy-minimized FCC manifest and shards. The importer can write only to the private FCC bucket and its own logs.
 - API responses disable caching. Logs contain request IDs, result codes, and keyed hashes only—not request bodies, raw IP addresses, callsigns, or passcodes.
+- Weekly report messages contain normalized callsigns, public FCC licensee names when available, and the running unique count. The reporting Lambda does not log the message body.
 - The callsign validator is intentionally conservative and based on APRS-IS international syntax guidance. It validates syntax, not license ownership or status.
 - A failed download or import leaves the previous manifest in place, so callers continue using the last successfully published dataset. Raw FCC archives expire after 35 days and processed datasets after 180 days.
 - The importer error alarm records alarm state in CloudWatch. Add an SNS alarm action later if email or paging notifications are desired; GitHub reports scheduled workflow failures in the repository Actions UI.

@@ -80,6 +80,7 @@ For background beaconing, test on a physical iPhone with **While Using the App**
 - `BeaconLiveActivity` — Lock Screen and Dynamic Island presentation
 - `BeaconTests` — automated tests
 - `website` — public landing, support, and privacy pages
+- `beaconwatch` — privacy-minimized APRS-IS receiver and station map for `k6bat.com/beaconwatch`
 - `infra/passcode-api` — passcode service and deployment infrastructure; see its [README](infra/passcode-api/README.md)
 
 ## Release bookkeeping

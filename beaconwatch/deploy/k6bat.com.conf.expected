@@ -1,0 +1,24 @@
+server {
+  listen 80;
+  server_name k6bat.com www.k6bat.com;
+
+  root /var/www/k6bat.com;
+  index index.php index.html;
+
+  location / {
+    try_files $uri $uri/ /index.php?$args;
+  }
+
+  location ~ \.php$ {
+    include snippets/fastcgi-php.conf;
+    fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+  }
+
+  location ~ /\. {
+    deny all;
+  }
+
+  location = /wp-config.php {
+    deny all;
+  }
+}

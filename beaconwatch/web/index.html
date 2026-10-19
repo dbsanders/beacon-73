@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A worldwide map of stations heard using the Beacon 73 APRS app.">
+  <title>BeaconWatch · Beacon 73</title>
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="preconnect" href="https://server.arcgisonline.com" crossorigin>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/beaconwatch/styles.css?v=1.0.1">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="mark" aria-hidden="true">73</span>
+      <div>
+        <p class="eyebrow">Beacon 73</p>
+        <h1>BeaconWatch</h1>
+      </div>
+    </div>
+    <div class="count" aria-live="polite">
+      <strong id="station-count">—</strong>
+      <span>stations</span>
+    </div>
+  </header>
+
+  <main>
+    <div id="map" role="application" aria-label="Map of Beacon 73 stations"></div>
+    <div id="map-status" class="map-status" role="status">Loading stations…</div>
+  </main>
+
+  <footer>
+    <p>One point per callsign. A point changes only after that station moves more than 250 km.</p>
+    <p>Basemap tiles © <a href="https://www.esri.com/">Esri</a>.</p>
+  </footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/beaconwatch/app.js?v=1.0.2"></script>
+</body>
+</html>
