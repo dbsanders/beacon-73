@@ -46,6 +46,26 @@ class FccImporterTests(unittest.TestCase):
         self.assertEqual(dataset_id, "20260920T133208Z")
         self.assertEqual(source_updated_at, "2026-09-20T13:32:08+00:00")
 
+    def test_build_canada_index_keeps_only_callsign_and_name(self):
+        body = (
+            "callsign;first_name;surname;address_line;city;prov_cd;postal_code;"
+            "qual_a;qual_b;qual_c;qual_d;qual_e;club_name;club_name_2;"
+            "club_address;club_city;club_prov_cd;club_postal_code\n"
+            "VE7ABC;JANE;DOE;12 Private Street;Vancouver;BC;V1V1V1;A;;;;;;;;;;\n"
+            "VE3CLB;;;;;ON;;;;;;;Beacon;Radio Club;;;;;\n"
+        )
+        with tempfile.NamedTemporaryFile(suffix=".zip") as archive_file:
+            with zipfile.ZipFile(archive_file.name, "w") as archive:
+                archive.writestr("amateur_delim.txt", body)
+
+            records = fcc_importer.build_canada_index(archive_file.name)
+
+        self.assertEqual(records["VE7ABC"]["licenseeName"], "Jane Doe")
+        self.assertEqual(records["VE7ABC"]["status"], "Assigned")
+        self.assertEqual(records["VE3CLB"]["licenseeName"], "Beacon Radio Club")
+        self.assertNotIn("address", records["VE7ABC"])
+        self.assertNotIn("qualification", records["VE7ABC"])
+
 
 if __name__ == "__main__":
     unittest.main()

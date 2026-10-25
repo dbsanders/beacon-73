@@ -29,11 +29,24 @@ ATTESTATION_VERSION = os.environ.get("ATTESTATION_VERSION", "v2")
 HASH_SALT = os.environ.get("HASH_SALT", "local-test-only")
 FCC_BUCKET_NAME = os.environ.get("FCC_BUCKET_NAME", "beacon73-fcc-test")
 LOOKUP_RATE_LIMIT_REQUESTS = int(os.environ.get("LOOKUP_RATE_LIMIT_REQUESTS", "30"))
-FCC_MANIFEST_CACHE_SECONDS = 300
+CALLSIGN_MANIFEST_CACHE_SECONDS = 300
 
 TABLE = boto3.resource("dynamodb").Table(TABLE_NAME)
 S3 = boto3.client("s3")
 FCC_CACHE: dict[str, Any] = {}
+
+CALLSIGN_REGISTRIES = (
+    {
+        "code": "FCC",
+        "manifestKey": "current/manifest.json",
+        "datasetPrefix": "datasets",
+    },
+    {
+        "code": "ISED",
+        "manifestKey": "current/canada-manifest.json",
+        "datasetPrefix": "datasets/canada",
+    },
+)
 
 # Conservative APRS-IS-compatible international amateur callsign syntax.
 # SSIDs are normalized separately before this expression is applied.
@@ -175,38 +188,50 @@ def parse_body(event: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def fcc_manifest() -> dict[str, Any]:
-    fetched_at = FCC_CACHE.get("manifestFetchedAt", 0.0)
-    if "manifest" not in FCC_CACHE or time.monotonic() - fetched_at >= FCC_MANIFEST_CACHE_SECONDS:
+def registry_manifest(registry: dict[str, str]) -> dict[str, Any] | None:
+    code = registry["code"]
+    manifest_cache_key = f"manifest:{code}"
+    fetched_cache_key = f"manifestFetchedAt:{code}"
+    fetched_at = FCC_CACHE.get(fetched_cache_key, 0.0)
+    if (
+        manifest_cache_key not in FCC_CACHE
+        or time.monotonic() - fetched_at >= CALLSIGN_MANIFEST_CACHE_SECONDS
+    ):
         try:
-            result = S3.get_object(Bucket=FCC_BUCKET_NAME, Key="current/manifest.json")
+            result = S3.get_object(
+                Bucket=FCC_BUCKET_NAME,
+                Key=registry["manifestKey"],
+            )
         except ClientError as error:
             if error.response.get("Error", {}).get("Code") in {"NoSuchKey", "NoSuchBucket"}:
-                raise ApiError(
-                    503,
-                    "fcc_data_unavailable",
-                    "FCC callsign data is not available yet; please try again later",
-                ) from error
+                FCC_CACHE[manifest_cache_key] = None
+                FCC_CACHE[fetched_cache_key] = time.monotonic()
+                return None
             raise
-        FCC_CACHE["manifest"] = json.loads(result["Body"].read())
-        FCC_CACHE["manifestFetchedAt"] = time.monotonic()
-    return FCC_CACHE["manifest"]
+        FCC_CACHE[manifest_cache_key] = json.loads(result["Body"].read())
+        FCC_CACHE[fetched_cache_key] = time.monotonic()
+    return FCC_CACHE[manifest_cache_key]
 
 
-def lookup_fcc_callsign(callsign: str) -> tuple[dict[str, Any] | None, dict[str, Any]]:
-    manifest = fcc_manifest()
+def lookup_registry_callsign(
+    callsign: str,
+    registry: dict[str, str],
+    manifest: dict[str, Any],
+) -> dict[str, Any] | None:
     shard_names = manifest.get("shards", [])
     prefix_length = manifest.get("shardPrefixLength")
     if not isinstance(prefix_length, int):
         prefix_length = len(shard_names[0]) if shard_names else 2
     shard_name = callsign[:prefix_length]
     if "shards" in manifest and shard_name not in shard_names:
-        return None, manifest
+        return None
     cache_key = (
-        f"shard:{manifest['datasetId']}:{manifest.get('importedAt', '')}:{shard_name}"
+        f"shard:{registry['code']}:{manifest['datasetId']}:"
+        f"{manifest.get('importedAt', '')}:{shard_name}"
     )
     if cache_key not in FCC_CACHE:
-        key = f"datasets/{manifest['datasetId']}/shards/{shard_name}.json.gz"
+        dataset_prefix = manifest.get("datasetPrefix", registry["datasetPrefix"])
+        key = f"{dataset_prefix}/{manifest['datasetId']}/shards/{shard_name}.json.gz"
         try:
             result = S3.get_object(Bucket=FCC_BUCKET_NAME, Key=key)
             FCC_CACHE[cache_key] = json.loads(gzip.decompress(result["Body"].read()))
@@ -219,7 +244,26 @@ def lookup_fcc_callsign(callsign: str) -> tuple[dict[str, Any] | None, dict[str,
         shard_keys = [key for key in FCC_CACHE if key.startswith("shard:")]
         if len(shard_keys) > 16:
             FCC_CACHE.pop(shard_keys[0], None)
-    return FCC_CACHE[cache_key].get(callsign), manifest
+    return FCC_CACHE[cache_key].get(callsign)
+
+
+def lookup_callsign(callsign: str) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    available_manifests: list[dict[str, Any]] = []
+    for registry in CALLSIGN_REGISTRIES:
+        manifest = registry_manifest(registry)
+        if manifest is None:
+            continue
+        available_manifests.append(manifest)
+        record = lookup_registry_callsign(callsign, registry, manifest)
+        if record is not None:
+            return record, manifest
+    if available_manifests:
+        return None, available_manifests[0]
+    raise ApiError(
+        503,
+        "callsign_data_unavailable",
+        "Callsign registry data is not available yet; please try again later",
+    )
 
 
 def lookup_response(
@@ -233,11 +277,11 @@ def lookup_response(
         scope="LOOKUP",
         limit=LOOKUP_RATE_LIMIT_REQUESTS,
     )
-    record, manifest = lookup_fcc_callsign(callsign)
+    record, manifest = lookup_callsign(callsign)
     LOGGER.info(
         json.dumps(
             {
-                "event": "fcc_callsign_lookup",
+                "event": "callsign_registry_lookup",
                 "request_id": request_id,
                 "callsign_hash": keyed_hash(callsign),
                 "matched": record is not None,
@@ -252,6 +296,9 @@ def lookup_response(
             "dataset": {
                 "sourceUpdatedAt": manifest["sourceUpdatedAt"],
                 "recordCount": manifest["recordCount"],
+                "source": manifest.get("source"),
+                "countryCode": manifest.get("countryCode", "US"),
+                "registryCode": manifest.get("registryCode", "FCC"),
             },
         },
         request_id,

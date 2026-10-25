@@ -61,7 +61,7 @@ variable "rate_limit_window_seconds" {
 }
 
 variable "lookup_rate_limit_requests" {
-  description = "Maximum FCC callsign lookups per source IP in each fixed window."
+  description = "Maximum callsign registry lookups per source IP in each fixed window."
   type        = number
   default     = 30
 

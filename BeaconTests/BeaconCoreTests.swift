@@ -4,6 +4,17 @@ import Network
 @testable import Beacon
 
 final class BeaconCoreTests: XCTestCase {
+    func testTipProductIdentifiersUseBeaconBundleNamespace() {
+        XCTAssertEqual(
+            TipProductCatalog.identifiers,
+            [
+                "com.cybersand.beacon73.tip.small",
+                "com.cybersand.beacon73.tip.medium",
+                "com.cybersand.beacon73.tip.large"
+            ]
+        )
+    }
+
     func testThemeDefaultsToDarkForExistingSettings() throws {
         let display = try JSONDecoder().decode(AppSettings.Display.self, from: Data("{}".utf8))
         XCTAssertEqual(display.theme, .dark)

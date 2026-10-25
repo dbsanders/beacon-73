@@ -4,6 +4,7 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @State private var selection = 0
+    @State private var tipStore = TipStore()
 
     var body: some View {
         Group {
@@ -38,6 +39,9 @@ struct RootView: View {
                 model.locationService.requestPermission()
             }
             await model.startReceiving()
+        }
+        .task {
+            await tipStore.observeTransactions()
         }
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
@@ -80,7 +84,7 @@ struct RootView: View {
                 .tabItem { Label("Track", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
                 .tag(2)
 
-            SettingsView { selection = 0 }
+            SettingsView(tipStore: tipStore) { selection = 0 }
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
                 .tag(3)
         }

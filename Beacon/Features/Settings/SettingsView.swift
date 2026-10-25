@@ -1,12 +1,18 @@
+@preconcurrency import ActivityKit
 import CoreLocation
+import StoreKit
 import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @State private var isPasscodeVisible = false
     @State private var isShowingPasscodeRequest = false
+    @State private var isShowingDonation = false
+    @State private var liveActivitiesEnabled = false
     @State private var passcodeRequestConfirmation: String?
+    let tipStore: TipStore
     let showMap: () -> Void
 
     private var receiveRadiusLabel: String {
@@ -14,32 +20,30 @@ struct SettingsView: View {
         return "\(model.settings.receiveRadius) \(unit)"
     }
 
+    private var appVersionLabel: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+
+        switch (version, build) {
+        case let (version?, build?):
+            return "\(version) (\(build))"
+        case let (version?, nil):
+            return version
+        default:
+            return "Unavailable"
+        }
+    }
+
+    private var hasConfiguredCallsign: Bool {
+        AmateurCallsignValidator.normalizedBase(from: model.settings.identity.callsign) != nil
+    }
+
     var body: some View {
         @Bindable var model = model
         NavigationStack {
             Form {
-                Section {
-                    if model.isDemoMode {
-                        Button {
-                            model.exitDemoMode()
-                        } label: {
-                            Label("Exit Demo and Set Up Callsign", systemImage: "person.badge.key.fill")
-                        }
-                    } else {
-                        Button {
-                            dismissKeyboard()
-                            Task {
-                                await model.enterDemoMode()
-                                showMap()
-                            }
-                        } label: {
-                            Label("Explore Demo", systemImage: "map.fill")
-                        }
-                    }
-                } header: {
-                    Text("Demo Mode")
-                } footer: {
-                    Text("Demo Mode uses simulated stations and disables all transmission.")
+                if model.isDemoMode || !hasConfiguredCallsign {
+                    demoModeSection
                 }
 
                 Section {
@@ -226,7 +230,8 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    LabeledContent("Permission", value: model.locationService.authorizationStatus.label)
+                    LabeledContent("Location Permission", value: model.locationService.authorizationStatus.label)
+                    LabeledContent("Live Activities", value: liveActivitiesEnabled ? "On" : "Off")
                     if model.locationService.authorizationStatus == .notDetermined {
                         Button("Request Location Access") { model.locationService.requestPermission() }
                     } else {
@@ -236,13 +241,35 @@ struct SettingsView: View {
                         }
                     }
                 } header: {
-                    Text("Location")
+                    Text("iOS Permissions")
                 } footer: {
                     if model.locationService.authorizationStatus == .restricted {
                         Text("Location access is restricted by device settings or management policies.")
                     } else if model.locationService.authorizationStatus != .notDetermined {
                         Text("Change location access in iOS Settings. While Using the App is enough for auto-beaconing, including when the screen is locked.")
                     }
+                }
+
+                Section {
+                    LabeledContent("Version", value: appVersionLabel)
+
+                    HStack(spacing: 24) {
+                        Link("Privacy Policy", destination: URL(string: "https://beacon73.com/privacy/")!)
+                        Link("Support", destination: URL(string: "https://beacon73.com/support/")!)
+                        Button {
+                            isShowingDonation = true
+                        } label: {
+                            Text("DONATE")
+                                .fontWeight(.bold)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Donate")
+                    }
+                    .font(.footnote)
+                }
+
+                if !model.isDemoMode, hasConfiguredCallsign {
+                    demoModeSection
                 }
             }
             .navigationTitle("Settings")
@@ -262,7 +289,15 @@ struct SettingsView: View {
                 }
                 keyboardDoneButton
             }
-            .onAppear { model.beginEditingSettings() }
+            .onAppear {
+                model.beginEditingSettings()
+                refreshPermissionStatuses()
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    refreshPermissionStatuses()
+                }
+            }
             .onDisappear {
                 model.endEditingSettings()
                 model.saveSettings()
@@ -275,6 +310,9 @@ struct SettingsView: View {
                     model.saveSettings()
                     passcodeRequestConfirmation = "Your APRS-IS passcode was approved and saved for \(result.callsign)."
                 }
+            }
+            .sheet(isPresented: $isShowingDonation) {
+                DonationView(store: tipStore)
             }
             .alert(
                 "Passcode Saved",
@@ -289,13 +327,164 @@ struct SettingsView: View {
             }
         }
     }
+
+    private func refreshPermissionStatuses() {
+        liveActivitiesEnabled = ActivityAuthorizationInfo().areActivitiesEnabled
+    }
+
+    private var demoModeSection: some View {
+        Section {
+            if model.isDemoMode {
+                Button {
+                    model.exitDemoMode()
+                } label: {
+                    Label("Exit Demo and Set Up Callsign", systemImage: "person.badge.key.fill")
+                }
+            } else {
+                Button {
+                    dismissKeyboard()
+                    Task {
+                        await model.enterDemoMode()
+                        showMap()
+                    }
+                } label: {
+                    Label("Explore Demo", systemImage: "map.fill")
+                }
+            }
+        } header: {
+            Text("Demo Mode")
+        } footer: {
+            Text("Demo Mode uses simulated stations and disables all transmission.")
+        }
+    }
+}
+
+private struct DonationView: View {
+    @Environment(\.dismiss) private var dismiss
+    let store: TipStore
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("Thank you for considering a tip. Anything you decide to give is sincerely appreciated.")
+                        .font(.subheadline.weight(.semibold))
+
+                    Text("I’m Bret, K6BAT—a fellow ham and the developer behind Beacon 73. Your support helps me keep improving and maintaining the app, but there’s never any obligation to contribute.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    TipJarView(store: store)
+                } header: {
+                    Text("Support Beacon 73")
+                }
+            }
+            .navigationTitle("Support Beacon 73")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+private struct TipJarView: View {
+    let store: TipStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if store.isLoading {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Loading tip options…")
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            } else if store.products.isEmpty {
+                if store.didAttemptLoad {
+                    Text(store.notice ?? "Tip options are currently unavailable.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    Button("Try Again") {
+                        Task { await store.retryLoadingProducts() }
+                    }
+                    .font(.footnote.weight(.semibold))
+                }
+            } else {
+                ForEach(store.products, id: \.id) { product in
+                    Button {
+                        Task { await store.purchase(product) }
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(product.displayName)
+                                    .foregroundStyle(.primary)
+
+                                if !product.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    Text(product.description)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .multilineTextAlignment(.leading)
+
+                            Spacer()
+                            if store.purchaseInProgressProductID == product.id {
+                                ProgressView()
+                            } else {
+                                Text(product.displayPrice)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.blue)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(TipOptionButtonStyle())
+                    .disabled(store.purchaseInProgressProductID != nil)
+                    .accessibilityHint("Makes a one-time optional contribution through the App Store")
+                }
+
+                if let notice = store.notice {
+                    Text(notice)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .task {
+            await store.loadProducts()
+        }
+    }
+}
+
+private struct TipOptionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .background {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.blue.opacity(configuration.isPressed ? 0.08 : 0.03))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.blue.opacity(configuration.isPressed ? 0.55 : 0.28), lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+    }
 }
 
 private struct PasscodeRequestSheet: View {
-    private enum FCCLookupState {
+    private enum CallsignLookupState {
         case loading
-        case matched(FCCCallsignRecord, FCCCallsignLookup.Dataset)
-        case notFound(FCCCallsignLookup.Dataset)
+        case matched(CallsignRegistryRecord, CallsignRegistryLookup.Dataset)
+        case notFound(CallsignRegistryLookup.Dataset)
         case unavailable
     }
 
@@ -306,7 +495,7 @@ private struct PasscodeRequestSheet: View {
     @State private var hasAttested = false
     @State private var isSubmitting = false
     @State private var errorMessage: String?
-    @State private var fccLookupState = FCCLookupState.loading
+    @State private var callsignLookupState = CallsignLookupState.loading
 
     private var normalizedCallsign: String {
         AmateurCallsignValidator.normalizedBase(from: callsign)
@@ -324,7 +513,7 @@ private struct PasscodeRequestSheet: View {
                         .foregroundStyle(.secondary)
                 }
 
-                fccRecordSection
+                callsignRecordSection
 
                 Section {
                     Button {
@@ -371,7 +560,7 @@ private struct PasscodeRequestSheet: View {
             .navigationTitle("Request Passcode")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(isSubmitting)
-            .task { await loadFCCRecord() }
+            .task { await loadCallsignRecord() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -393,13 +582,13 @@ private struct PasscodeRequestSheet: View {
     }
 
     @ViewBuilder
-    private var fccRecordSection: some View {
-        switch fccLookupState {
+    private var callsignRecordSection: some View {
+        switch callsignLookupState {
         case .loading:
-            Section("FCC license record") {
+            Section("License record") {
                 HStack(spacing: 10) {
                     ProgressView()
-                    Text("Searching FCC amateur licenses…")
+                    Text("Searching supported amateur-license registries…")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -416,24 +605,24 @@ private struct PasscodeRequestSheet: View {
                     LabeledContent("Expires", value: expirationDate)
                 }
             } header: {
-                Text("FCC license record")
+                Text(dataset.recordTitle)
             } footer: {
-                Text("Public FCC ULS data updated \(dataset.updateDateDescription). Address and contact details are not retained by Beacon 73.")
+                Text("\(dataset.sourceDescription) updated \(dataset.updateDateDescription). Address and contact details are not retained by Beacon 73.")
             }
         case .notFound(let dataset):
-            Section("FCC license record") {
-                Label("No active U.S. FCC record was found.", systemImage: "magnifyingglass")
+            Section("License record") {
+                Label("No supported public license record was found.", systemImage: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                Text("International callsigns are not included in FCC data. You may continue if you are authorized to use this callsign.")
+                Text("Beacon 73 currently searches U.S. and Canadian registry data. You may continue if you are authorized to use this callsign.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("FCC data updated \(dataset.updateDateDescription)")
+                Text("\(dataset.sourceDescription) updated \(dataset.updateDateDescription)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
         case .unavailable:
-            Section("FCC license record") {
-                Label("FCC record lookup is temporarily unavailable.", systemImage: "exclamationmark.triangle")
+            Section("License record") {
+                Label("Callsign registry lookup is temporarily unavailable.", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
                 Text("You may still continue with the required authorization attestation.")
                     .font(.caption)
@@ -443,20 +632,20 @@ private struct PasscodeRequestSheet: View {
     }
 
     private var isLookupLoading: Bool {
-        if case .loading = fccLookupState { return true }
+        if case .loading = callsignLookupState { return true }
         return false
     }
 
-    private func loadFCCRecord() async {
+    private func loadCallsignRecord() async {
         do {
             let lookup = try await PasscodeRequestClient().lookupCallsign(normalizedCallsign)
             if let record = lookup.record {
-                fccLookupState = .matched(record, lookup.dataset)
+                callsignLookupState = .matched(record, lookup.dataset)
             } else {
-                fccLookupState = .notFound(lookup.dataset)
+                callsignLookupState = .notFound(lookup.dataset)
             }
         } catch {
-            fccLookupState = .unavailable
+            callsignLookupState = .unavailable
         }
     }
 

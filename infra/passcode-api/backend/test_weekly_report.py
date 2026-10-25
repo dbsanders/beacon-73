@@ -82,6 +82,40 @@ class WeeklyReportTests(unittest.TestCase):
             {"pk": "cursor"},
         )
 
+    def test_registry_details_falls_through_to_canadian_data(self):
+        fcc_manifest = {
+            "datasetId": "fcc-1",
+            "sourceUpdatedAt": "2026-10-19T00:00:00+00:00",
+            "shardPrefixLength": 3,
+            "shards": ["K6B"],
+        }
+        canada_manifest = {
+            "datasetId": "ca-1",
+            "sourceUpdatedAt": "2026-10-25T06:00:01+00:00",
+            "shardPrefixLength": 3,
+            "shards": ["VE7"],
+            "datasetPrefix": "datasets/canada",
+        }
+        canada_shard = {
+            "VE7ABC": {"callsign": "VE7ABC", "licenseeName": "Jane Doe"}
+        }
+        weekly_report.S3.get_object.side_effect = [
+            {"Body": io.BytesIO(json.dumps(fcc_manifest).encode())},
+            {"Body": io.BytesIO(json.dumps(canada_manifest).encode())},
+            {"Body": io.BytesIO(gzip.compress(json.dumps(canada_shard).encode()))},
+        ]
+
+        records, source_updates = weekly_report.registry_details(["VE7ABC"])
+
+        self.assertEqual(records["VE7ABC"]["licenseeName"], "Jane Doe")
+        self.assertEqual(
+            source_updates,
+            {
+                "FCC": "2026-10-19T00:00:00+00:00",
+                "ISED": "2026-10-25T06:00:01+00:00",
+            },
+        )
+
     def test_lambda_publishes_new_callsigns_and_running_total(self):
         weekly_report.TABLE.scan.return_value = {
             "Items": [

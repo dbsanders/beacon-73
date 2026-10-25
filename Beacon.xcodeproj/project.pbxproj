@@ -37,6 +37,7 @@
 		B1000000000000000000001C /* BeaconLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1000000000000000000001F /* BeaconLiveActivityWidget.swift */; };
 		B1000000000000000000001D /* BeaconActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1000000000000000000001D /* BeaconActivityAttributes.swift */; };
 		B1000000000000000000001E /* BeaconLiveActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = F10000000000000000000021 /* BeaconLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B1000000000000000000001F /* TipStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000022 /* TipStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -104,6 +105,7 @@
 		F1000000000000000000001F /* BeaconLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeaconLiveActivityWidget.swift; sourceTree = "<group>"; };
 		F10000000000000000000020 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F10000000000000000000021 /* BeaconLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BeaconLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F10000000000000000000022 /* TipStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TipStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -229,6 +231,7 @@
 				F1000000000000000000000F /* Formatting.swift */,
 				F10000000000000000000015 /* KeychainStore.swift */,
 				F10000000000000000000017 /* APRSSymbolIcon.swift */,
+				F10000000000000000000022 /* TipStore.swift */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -452,6 +455,7 @@
 				B10000000000000000000019 /* PasscodeRequestClient.swift in Sources */,
 				B1000000000000000000001A /* BeaconActivityAttributes.swift in Sources */,
 				B1000000000000000000001B /* BeaconLiveActivityController.swift in Sources */,
+				B1000000000000000000001F /* TipStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -591,7 +595,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Beacon/Resources/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.navigation";
-				MARKETING_VERSION = 1.1.1;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cybersand.beacon73;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -616,7 +620,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Beacon/Resources/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.navigation";
-				MARKETING_VERSION = 1.1.1;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cybersand.beacon73;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -669,7 +673,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = BeaconLiveActivity/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.1.1;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cybersand.beacon73.liveactivity;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -689,7 +693,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = BeaconLiveActivity/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.1.1;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cybersand.beacon73.liveactivity;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;

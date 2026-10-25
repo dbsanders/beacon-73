@@ -6,7 +6,7 @@ struct PasscodeRequestResult: Decodable, Equatable {
     let attestationRecorded: Bool
 }
 
-struct FCCCallsignRecord: Decodable, Equatable {
+struct CallsignRegistryRecord: Decodable, Equatable {
     let callsign: String
     let status: String
     let radioService: String?
@@ -29,18 +29,29 @@ struct FCCCallsignRecord: Decodable, Equatable {
     }
 }
 
-struct FCCCallsignLookup: Decodable, Equatable {
+struct CallsignRegistryLookup: Decodable, Equatable {
     struct Dataset: Decodable, Equatable {
         let sourceUpdatedAt: String
         let recordCount: Int
+        let source: String?
+        let countryCode: String?
+        let registryCode: String?
 
         var updateDateDescription: String {
             String(sourceUpdatedAt.prefix(10))
         }
+
+        var recordTitle: String {
+            registryCode == "ISED" ? "Canadian license record" : "FCC license record"
+        }
+
+        var sourceDescription: String {
+            registryCode == "ISED" ? "Public Canadian ISED data" : "Public FCC ULS data"
+        }
     }
 
     let callsign: String
-    let record: FCCCallsignRecord?
+    let record: CallsignRegistryRecord?
     let dataset: Dataset
 }
 
@@ -124,7 +135,7 @@ struct PasscodeRequestClient {
         return try Self.decodeResponse(data: data, statusCode: httpResponse.statusCode)
     }
 
-    func lookupCallsign(_ callsign: String) async throws -> FCCCallsignLookup {
+    func lookupCallsign(_ callsign: String) async throws -> CallsignRegistryLookup {
         guard let baseURL else { throw RequestError.notConfigured }
         let request = try Self.makeLookupRequest(baseURL: baseURL, callsign: callsign)
         let (data, response) = try await session.data(for: request)
@@ -135,9 +146,9 @@ struct PasscodeRequestClient {
             if let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data) {
                 throw RequestError.rejected(message: envelope.error.message)
             }
-            throw RequestError.rejected(message: "The FCC callsign lookup is unavailable.")
+            throw RequestError.rejected(message: "The callsign registry lookup is unavailable.")
         }
-        guard let lookup = try? JSONDecoder().decode(FCCCallsignLookup.self, from: data) else {
+        guard let lookup = try? JSONDecoder().decode(CallsignRegistryLookup.self, from: data) else {
             throw RequestError.invalidResponse
         }
         return lookup

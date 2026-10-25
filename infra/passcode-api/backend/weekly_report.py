@@ -12,6 +12,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import boto3
+from botocore.exceptions import ClientError
 
 
 TABLE_NAME = os.environ.get("TABLE_NAME", "beacon73-test")
@@ -25,6 +26,19 @@ FCC_BUCKET_NAME = os.environ.get("FCC_BUCKET_NAME", "beacon73-fcc-test")
 TABLE = boto3.resource("dynamodb").Table(TABLE_NAME)
 SNS = boto3.client("sns")
 S3 = boto3.client("s3")
+
+CALLSIGN_REGISTRIES = (
+    {
+        "code": "FCC",
+        "manifestKey": "current/manifest.json",
+        "datasetPrefix": "datasets",
+    },
+    {
+        "code": "ISED",
+        "manifestKey": "current/canada-manifest.json",
+        "datasetPrefix": "datasets/canada",
+    },
+)
 
 
 def previous_week(now: datetime) -> tuple[datetime, datetime]:
@@ -120,35 +134,53 @@ def new_callsigns(
     )
 
 
-def fcc_details(callsigns: list[str]) -> tuple[dict[str, dict[str, Any]], str | None]:
+def registry_details(
+    callsigns: list[str],
+) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
     if not callsigns:
-        return {}, None
-    manifest_result = S3.get_object(
-        Bucket=FCC_BUCKET_NAME,
-        Key="current/manifest.json",
-    )
-    manifest = json.loads(manifest_result["Body"].read())
-    shard_names = set(manifest.get("shards", []))
-    prefixes = sorted({callsign[:3] for callsign in callsigns})
+        return {}, {}
     records: dict[str, dict[str, Any]] = {}
-    for prefix in prefixes:
-        if prefix not in shard_names:
-            continue
-        result = S3.get_object(
-            Bucket=FCC_BUCKET_NAME,
-            Key=f"datasets/{manifest['datasetId']}/shards/{prefix}.json.gz",
-        )
-        shard = json.loads(gzip.decompress(result["Body"].read()))
-        for callsign in callsigns:
-            if callsign in shard:
-                records[callsign] = shard[callsign]
-    return records, manifest.get("sourceUpdatedAt")
+    source_updates: dict[str, str] = {}
+    unresolved = set(callsigns)
+    for registry in CALLSIGN_REGISTRIES:
+        try:
+            manifest_result = S3.get_object(
+                Bucket=FCC_BUCKET_NAME,
+                Key=registry["manifestKey"],
+            )
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") in {"NoSuchKey", "NoSuchBucket"}:
+                continue
+            raise
+        manifest = json.loads(manifest_result["Body"].read())
+        source_updated_at = manifest.get("sourceUpdatedAt")
+        if isinstance(source_updated_at, str):
+            source_updates[registry["code"]] = source_updated_at
+        shard_names = set(manifest.get("shards", []))
+        prefix_length = manifest.get("shardPrefixLength", 3)
+        prefixes = sorted({callsign[:prefix_length] for callsign in unresolved})
+        for prefix in prefixes:
+            if prefix not in shard_names:
+                continue
+            dataset_prefix = manifest.get("datasetPrefix", registry["datasetPrefix"])
+            result = S3.get_object(
+                Bucket=FCC_BUCKET_NAME,
+                Key=f"{dataset_prefix}/{manifest['datasetId']}/shards/{prefix}.json.gz",
+            )
+            shard = json.loads(gzip.decompress(result["Body"].read()))
+            for callsign in tuple(unresolved):
+                if callsign in shard:
+                    records[callsign] = shard[callsign]
+                    unresolved.remove(callsign)
+        if not unresolved:
+            break
+    return records, source_updates
 
 
 def report_body(
     records: dict[str, dict[str, Any]],
     details: dict[str, dict[str, Any]],
-    source_updated_at: str | None,
+    source_updates: dict[str, str],
     start: datetime,
     end: datetime,
 ) -> str:
@@ -161,14 +193,16 @@ def report_body(
         f"({REPORT_TIME_ZONE})",
         f"New unique callsigns: {len(callsigns)}",
     ]
-    if source_updated_at:
-        lines.append(f"FCC data updated: {source_updated_at[:10]}")
+    if source_updates.get("FCC"):
+        lines.append(f"FCC data updated: {source_updates['FCC'][:10]}")
+    if source_updates.get("ISED"):
+        lines.append(f"Canadian ISED data updated: {source_updates['ISED'][:10]}")
     lines.append("")
     if callsigns:
         for callsign in callsigns:
             record = details.get(callsign)
             if not record:
-                lines.append(f"{callsign} — No active FCC record found")
+                lines.append(f"{callsign} — No supported public registry record found")
                 continue
             name = record.get("licenseeName") or "Name unavailable"
             lines.append(f"{callsign} — {name}")
@@ -190,8 +224,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     records = unique_callsigns(scan_report_records())
     retain_unique_callsigns(records)
     callsigns = new_callsigns(records, start, end)
-    details, source_updated_at = fcc_details(callsigns)
-    body = report_body(records, details, source_updated_at, start, end)
+    details, source_updates = registry_details(callsigns)
+    body = report_body(records, details, source_updates, start, end)
     SNS.publish(
         TopicArn=REPORT_TOPIC_ARN,
         Subject=f"Beacon 73 callsign report — week ending {(end.date() - timedelta(days=1)).isoformat()}",

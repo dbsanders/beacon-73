@@ -1,4 +1,4 @@
-name: Refresh FCC callsign data
+name: Refresh callsign registry data
 
 on:
   schedule:
@@ -10,7 +10,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: fcc-callsign-import
+  group: callsign-registry-import
   cancel-in-progress: false
 
 jobs:
@@ -34,8 +34,8 @@ jobs:
             --output /tmp/l_amat.zip "$archive_url"
           unzip -t /tmp/l_amat.zip >/dev/null
 
-          source_updated_at="$(curl --fail --silent --show-error --head "$archive_url" \
-            | awk 'BEGIN {IGNORECASE=1} /^last-modified:/ {sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}')"
+          source_updated_at="$(curl --fail --silent --show-error --location --head "$archive_url" \
+            | awk 'tolower($0) ~ /^last-modified:/ {sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}')"
           source_updated_at="$(date --utc --date="$source_updated_at" +%Y-%m-%dT%H:%M:%SZ)"
           dataset_id="$(date --utc --date="$source_updated_at" +%Y%m%dT%H%M%SZ)"
           raw_key="imports/${dataset_id}/l_amat.zip"
@@ -59,3 +59,39 @@ jobs:
             /tmp/import-result.json
           cat /tmp/import-result.json
           jq -e '.recordCount > 0' /tmp/import-result.json >/dev/null
+
+      - name: Download the official Canadian amateur archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_url="https://apc-cap.ic.gc.ca/datafiles/amateur_delim.zip"
+          curl --fail --location --retry 4 --retry-all-errors \
+            --output /tmp/amateur_delim.zip "$archive_url"
+          unzip -t /tmp/amateur_delim.zip >/dev/null
+
+          source_updated_at="$(curl --fail --silent --show-error --location --head "$archive_url" \
+            | awk 'tolower($0) ~ /^last-modified:/ {sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}')"
+          source_updated_at="$(date --utc --date="$source_updated_at" +%Y-%m-%dT%H:%M:%SZ)"
+          dataset_id="$(date --utc --date="$source_updated_at" +%Y%m%dT%H%M%SZ)"
+          raw_key="imports/canada/${dataset_id}/amateur_delim.zip"
+
+          aws s3 cp /tmp/amateur_delim.zip \
+            "s3://beacon73-fcc-data-422095364378-us-west-2/${raw_key}" \
+            --content-type application/zip \
+            --metadata "source-updated-at=${source_updated_at}"
+          printf 'CANADA_RAW_KEY=%s\n' "$raw_key" >> "$GITHUB_ENV"
+
+      - name: Build and publish Canadian callsign shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload="$(printf '{"rawKey":"%s"}' "$CANADA_RAW_KEY")"
+          aws lambda invoke \
+            --function-name beacon73-passcode-prod-fcc-importer \
+            --cli-binary-format raw-in-base64-out \
+            --payload "$payload" \
+            --cli-read-timeout 900 \
+            /tmp/canada-import-result.json
+          cat /tmp/canada-import-result.json
+          jq -e '.recordCount > 0 and .registryCode == "ISED"' \
+            /tmp/canada-import-result.json >/dev/null

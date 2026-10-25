@@ -102,6 +102,46 @@ class PasscodeTests(unittest.TestCase):
         self.assertEqual(body["record"]["licenseeName"], "Sanders, Bret")
         self.assertEqual(body["dataset"]["recordCount"], 823264)
 
+    def test_canadian_lookup_falls_through_to_ised_registry(self):
+        fcc_manifest = {
+            "datasetId": "20261025T060000Z",
+            "sourceUpdatedAt": "2026-10-25T06:00:00+00:00",
+            "recordCount": 823264,
+            "shardPrefixLength": 3,
+            "shards": ["K6B"],
+        }
+        canada_manifest = {
+            "datasetId": "20261025T060001Z",
+            "sourceUpdatedAt": "2026-10-25T06:00:01+00:00",
+            "recordCount": 100000,
+            "shardPrefixLength": 3,
+            "shards": ["VE7"],
+            "datasetPrefix": "datasets/canada",
+            "source": "ISED Amateur Radio Operator Certificate Services",
+            "countryCode": "CA",
+            "registryCode": "ISED",
+        }
+        record = {
+            "VE7ABC": {
+                "callsign": "VE7ABC",
+                "status": "Assigned",
+                "licenseeName": "Jane Doe",
+            }
+        }
+        app.S3.get_object.side_effect = [
+            {"Body": io.BytesIO(json.dumps(fcc_manifest).encode())},
+            {"Body": io.BytesIO(json.dumps(canada_manifest).encode())},
+            {"Body": io.BytesIO(gzip.compress(json.dumps(record).encode()))},
+        ]
+
+        result = app.lambda_handler(self.lookup_event("ve7abc"), self.context)
+
+        self.assertEqual(result["statusCode"], 200)
+        body = json.loads(result["body"])
+        self.assertEqual(body["record"]["licenseeName"], "Jane Doe")
+        self.assertEqual(body["dataset"]["registryCode"], "ISED")
+        self.assertEqual(body["dataset"]["countryCode"], "CA")
+
 
 
 if __name__ == "__main__":

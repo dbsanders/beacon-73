@@ -2,7 +2,7 @@
 
 Beacon 73 is a SwiftUI APRS-IS client for viewing nearby amateur-radio stations and sharing your position over an internet connection. It supports automatic and manual beaconing, a map-first dashboard, and Live Activity status on the Lock Screen and supported iPhones’ Dynamic Island.
 
-Version **1.1.1** source is tagged `appstore/1.1.1`. The earlier submitted 1.1 snapshot remains tagged `appstore/1.1`.
+Version **1.2.0**, build 1, source is tagged `appstore/1.2.0`. Version 1.1.1 source remains tagged `appstore/1.1.1`, and the earlier submitted 1.1 snapshot remains tagged `appstore/1.1`.
 
 ## Features
 
@@ -17,6 +17,7 @@ Version **1.1.1** source is tagged `appstore/1.1.1`. The earlier submitted 1.1 s
 - APRS-IS TCP transport, TNC2 position transmission, and parsing of uncompressed, compressed, and Mic-E positions.
 - Demo Mode with simulated stations and transmission disabled.
 - Light and Dark themes under Settings → Appearance. Changes apply immediately and are remembered across launches; Dark remains the default.
+- Privacy, support, and optional one-time App Store contribution links near the bottom of Settings.
 
 Settings → Units provides one Miles/Kilometers choice for displayed distances and speeds (mph/km/h). Existing distance preferences are preserved when upgrading. The station receive radius offers 1, 5, and then 10 through 100 in steps of 10, in miles or kilometers. Changing units snaps the converted radius to the nearest allowed value (ties round up), and older saved radii are normalized the same way. APRS-IS receives the selected radius converted to whole kilometers. Leaving Settings applies the final radius with a filter update on the existing connection; callsign/passcode or server host/port changes still reconnect. Changes made while connecting are queued, and connection recovery uses the latest filter.
 
@@ -33,7 +34,7 @@ The icon is orange when automatic beaconing is off and green with a pulsing ring
 
 Manual transmissions have a **10-second minimum interval**, measured from the last successful transmission, with a cooldown after a manual attempt. Automatic transmissions have a **30-second minimum interval**, including heading changes and restarting beaconing. Overlapping send requests are prevented. Automatic beaconing is not restored after the app process ends.
 
-Callsign setup remains available without location access, but manual and automatic beaconing require location permission. Denying or revoking access stops auto-beaconing, clears its next-beacon timer and cached GPS position, disables background location updates, and dismisses the Live Activity. After restoring permission in iOS Settings, turn auto-beaconing on again explicitly. Settings → Location offers the initial permission request until a choice has been made, then an **Open iOS Settings** button to manage access.
+Callsign setup remains available without location access, but manual and automatic beaconing require location permission. Denying or revoking access stops auto-beaconing, clears its next-beacon timer and cached GPS position, disables background location updates, and dismisses the Live Activity. After restoring permission in iOS Settings, turn auto-beaconing on again explicitly. Settings → iOS Permissions shows both Location Permission and Live Activities status, offers the initial location permission request until a choice has been made, then provides an **Open iOS Settings** button to manage access.
 
 ### Timing
 
@@ -50,9 +51,11 @@ Smart timing is recalculated from the latest location and last successful transm
 3. For a physical device, configure your Development Team for both **Beacon** and **BeaconLiveActivity**. If using different bundle identifiers, keep the extension identifier under the app’s identifier.
 4. Build and run. Choose **Explore Demo** to browse simulated stations, or **Set Up My Callsign** for live use.
 
-Live transmission requires your amateur-radio callsign, a valid APRS-IS passcode, a GPS position, and a verified APRS-IS connection. Settings includes a passcode-request flow with an FCC callsign lookup. Grant **While Using the App** location access. Starting auto-beaconing enables background location updates so the session can continue while the screen is locked or another app is open; existing **Always** permission also works. Beacon 73 does not request an upgrade to Always. Automatic location pausing is disabled during auto-beaconing so stationary sessions can continue, which uses more battery. Stopping auto-beaconing disables background tracking; foreground map updates remain available. Demo positions and the map’s fallback center are not transmitted.
+Live transmission requires your amateur-radio callsign, a valid APRS-IS passcode, a GPS position, and a verified APRS-IS connection. Settings includes a passcode-request flow with informational U.S. FCC and Canadian ISED callsign lookups. Grant **While Using the App** location access. Starting auto-beaconing enables background location updates so the session can continue while the screen is locked or another app is open; existing **Always** permission also works. Beacon 73 does not request an upgrade to Always. Automatic location pausing is disabled during auto-beaconing so stationary sessions can continue, which uses more battery. Stopping auto-beaconing disables background tracking; foreground map updates remain available. Demo positions and the map’s fallback center are not transmitted.
 
 Use a physical iPhone to evaluate haptics, background location, and Lock Screen/Dynamic Island behavior. The simulator can be used for UI work and simulated location testing.
+
+The optional contribution sheet loads three consumable StoreKit products: `com.cybersand.beacon73.tip.small`, `com.cybersand.beacon73.tip.medium`, and `com.cybersand.beacon73.tip.large`. Those products must exist in App Store Connect (or a local StoreKit test configuration) before tip options appear.
 
 ## Tests
 
@@ -85,7 +88,7 @@ For background beaconing, test on a physical iPhone with **While Using the App**
 
 ## Release bookkeeping
 
-The app’s Version and Build fields come from `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in the Xcode project. Beacon and BeaconLiveActivity are synchronized at version 1.1.1, build 1. The `appstore/1.1.1` source includes the extension version correction made after the initial 1.1.1 archive was created; that archive is not an exact build of this tag. Future uploads must use a fresh archive and an available build number. The earlier `appstore/1.1` tag is unchanged.
+The app’s Version and Build fields come from `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in the Xcode project. Beacon and BeaconLiveActivity are synchronized at version 1.2.0, build 1. The `appstore/1.1.1` source includes the extension version correction made after the initial 1.1.1 archive was created; that archive is not an exact build of that tag. The `appstore/1.2.0` tag identifies the 1.2.0 release source. Earlier submitted release tags remain unchanged.
 
 Release tags identify submitted source snapshots. Documentation updates after submission do not move those tags.
 

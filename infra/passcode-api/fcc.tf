@@ -149,7 +149,7 @@ resource "aws_cloudwatch_log_group" "fcc_importer" {
 
 resource "aws_lambda_function" "fcc_importer" {
   function_name = "${local.name}-fcc-importer"
-  description   = "Builds the Beacon 73 callsign lookup index from FCC ULS data."
+  description   = "Builds Beacon 73 callsign indexes from official FCC and ISED data."
   role          = aws_iam_role.fcc_importer.arn
   handler       = "fcc_importer.lambda_handler"
   runtime       = "python3.12"
@@ -233,7 +233,7 @@ resource "aws_iam_role_policy" "github_fcc_import" {
 
 resource "aws_cloudwatch_metric_alarm" "fcc_import_errors" {
   alarm_name          = "${local.name}-fcc-import-errors"
-  alarm_description   = "The scheduled FCC callsign import failed."
+  alarm_description   = "A scheduled callsign registry import failed."
   namespace           = "AWS/Lambda"
   metric_name         = "Errors"
   statistic           = "Sum"
