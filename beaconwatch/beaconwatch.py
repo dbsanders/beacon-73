@@ -239,7 +239,7 @@ class BeaconWatchHandler(BaseHTTPRequestHandler):
 
     def _send_static(self, path: str, send_body: bool) -> None:
         relative = path.removeprefix("/beaconwatch").lstrip("/") or "index.html"
-        if relative not in {"index.html", "styles.css", "app.js"}:
+        if relative not in {"index.html", "styles.css", "app.js", "countries-50m.json"}:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         file_path = self.server.web_root / relative  # type: ignore[attr-defined]
@@ -252,6 +252,7 @@ class BeaconWatchHandler(BaseHTTPRequestHandler):
             ".html": "text/html; charset=utf-8",
             ".css": "text/css; charset=utf-8",
             ".js": "text/javascript; charset=utf-8",
+            ".json": "application/json; charset=utf-8",
         }[file_path.suffix]
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)

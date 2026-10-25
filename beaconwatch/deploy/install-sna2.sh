@@ -4,6 +4,8 @@ set -euo pipefail
 source_dir=$(cd "$(dirname "$0")/.." && pwd)
 nginx_site=/etc/nginx/sites-available/k6bat.com.conf
 backup_path="${nginx_site}.beaconwatch-backup-$(date -u +%Y%m%dT%H%M%SZ)"
+country_data=$(mktemp)
+trap 'rm -f "$country_data"' EXIT
 
 if [[ $(id -u) -ne 0 ]]; then
   echo "Run this installer with sudo on sna2." >&2
@@ -28,6 +30,11 @@ install -o root -g root -m 0755 "$source_dir/beaconwatch.py" /opt/beaconwatch/be
 install -o root -g root -m 0644 "$source_dir/web/index.html" /opt/beaconwatch/web/index.html
 install -o root -g root -m 0644 "$source_dir/web/styles.css" /opt/beaconwatch/web/styles.css
 install -o root -g root -m 0644 "$source_dir/web/app.js" /opt/beaconwatch/web/app.js
+curl --fail --silent --show-error --location \
+  https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-50m.json \
+  --output "$country_data"
+echo "04342cdc1e3016bcd7db1630de95684d67b79fe3c8c460321e87aef469502394  $country_data" | sha256sum --check --status
+install -o root -g root -m 0644 "$country_data" /opt/beaconwatch/web/countries-50m.json
 install -o root -g root -m 0644 "$source_dir/deploy/beaconwatch.service" /etc/systemd/system/beaconwatch.service
 
 cp --preserve=mode,ownership,timestamps "$nginx_site" "$backup_path"

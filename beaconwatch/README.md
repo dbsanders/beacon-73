@@ -16,7 +16,7 @@ curl http://127.0.0.1:20242/beaconwatch/health
 curl http://127.0.0.1:20242/beaconwatch/api/locations
 ```
 
-The receiver runs without third-party Python packages. The map loads Leaflet 1.9.4 from unpkg and Esri World Street Map tiles.
+The receiver runs without third-party Python packages. The map loads Leaflet 1.9.4, Leaflet.markercluster 1.5.3, D3 Geo, and TopoJSON Client from unpkg, plus Esri World Street Map tiles. Nearby stations collapse into numbered clusters until the map is zoomed in far enough to show their individual callsigns. A country summary classifies each coordinate against the 50 m Natural Earth boundaries distributed by world-atlas. The installer downloads the pinned boundary file, verifies its checksum, and serves it locally with the other static assets.
 
 ## Production layout on sna2
 
