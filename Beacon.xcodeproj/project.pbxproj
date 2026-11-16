@@ -38,6 +38,9 @@
 		B1000000000000000000001D /* BeaconActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1000000000000000000001D /* BeaconActivityAttributes.swift */; };
 		B1000000000000000000001E /* BeaconLiveActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = F10000000000000000000021 /* BeaconLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B1000000000000000000001F /* TipStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000022 /* TipStore.swift */; };
+		B10000000000000000000020 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000023 /* Localizable.xcstrings */; };
+		B10000000000000000000021 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000024 /* InfoPlist.xcstrings */; };
+		B10000000000000000000022 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000025 /* Localizable.xcstrings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -106,6 +109,9 @@
 		F10000000000000000000020 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F10000000000000000000021 /* BeaconLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BeaconLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F10000000000000000000022 /* TipStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TipStore.swift; sourceTree = "<group>"; };
+		F10000000000000000000023 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		F10000000000000000000024 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
+		F10000000000000000000025 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -181,6 +187,7 @@
 			children = (
 				F1000000000000000000001F /* BeaconLiveActivityWidget.swift */,
 				F10000000000000000000020 /* Info.plist */,
+				F10000000000000000000025 /* Localizable.xcstrings */,
 			);
 			path = BeaconLiveActivity;
 			sourceTree = "<group>";
@@ -240,6 +247,8 @@
 			isa = PBXGroup;
 			children = (
 				F10000000000000000000011 /* Info.plist */,
+				F10000000000000000000023 /* Localizable.xcstrings */,
+				F10000000000000000000024 /* InfoPlist.xcstrings */,
 				F1000000000000000000001B /* Assets.xcassets */,
 				F10000000000000000000018 /* aprs-symbols-64-0.png */,
 				F10000000000000000000019 /* aprs-symbols-64-1.png */,
@@ -388,6 +397,7 @@
 			knownRegions = (
 				en,
 				Base,
+				"zh-Hans",
 			);
 			mainGroup = A10000000000000000000002;
 			productRefGroup = A10000000000000000000003 /* Products */;
@@ -410,6 +420,8 @@
 				B10000000000000000000015 /* aprs-symbols-64-0.png in Resources */,
 				B10000000000000000000016 /* aprs-symbols-64-1.png in Resources */,
 				B10000000000000000000017 /* APRS-SYMBOLS-COPYRIGHT.md in Resources */,
+				B10000000000000000000020 /* Localizable.xcstrings in Resources */,
+				B10000000000000000000021 /* InfoPlist.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -424,6 +436,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B10000000000000000000022 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -595,7 +608,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Beacon/Resources/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.navigation";
-				MARKETING_VERSION = 1.2.0;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cybersand.beacon73;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -620,7 +633,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Beacon/Resources/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.navigation";
-				MARKETING_VERSION = 1.2.0;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cybersand.beacon73;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -673,7 +686,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = BeaconLiveActivity/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.2.0;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cybersand.beacon73.liveactivity;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -693,7 +706,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = BeaconLiveActivity/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.2.0;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cybersand.beacon73.liveactivity;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;

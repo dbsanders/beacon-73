@@ -9,8 +9,8 @@ actor APRSISClient {
 
         var errorDescription: String? {
             switch self {
-            case .notConnected: "APRS-IS is not connected."
-            case .sendFailed(let error): "APRS-IS send failed: \(error.localizedDescription)"
+            case .notConnected: String(localized: "APRS-IS is not connected.")
+            case .sendFailed(let error): String(localized: "APRS-IS send failed: \(error.localizedDescription)")
             }
         }
     }

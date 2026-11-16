@@ -30,21 +30,21 @@ final class AppModel {
 
         var label: String {
             switch self {
-            case .disconnected: "Offline"
-            case .connecting: "Connecting"
-            case .connected(true): "Connected · Ready"
-            case .connected(false): "Connected · Verifying"
-            case .unverified: "Invalid APRS-IS passcode"
-            case .failed: "Connection issue"
+            case .disconnected: String(localized: "Offline")
+            case .connecting: String(localized: "Connecting")
+            case .connected(true): String(localized: "Connected · Ready")
+            case .connected(false): String(localized: "Connected · Verifying")
+            case .unverified: String(localized: "Invalid APRS-IS passcode")
+            case .failed: String(localized: "Connection issue")
             }
         }
 
         var shortLabel: String {
             switch self {
-            case .disconnected: "Offline"
-            case .connecting: "Connecting"
-            case .connected, .unverified: "Online"
-            case .failed: "Issue"
+            case .disconnected: String(localized: "Offline")
+            case .connecting: String(localized: "Connecting")
+            case .connected, .unverified: String(localized: "Online")
+            case .failed: String(localized: "Issue")
             }
         }
 
@@ -110,7 +110,7 @@ final class AppModel {
     }
 
     var invalidPasscodeMessage: String {
-        "The APRS-IS passcode does not match \(settings.identity.fullCallsign). Check the call sign and passcode in Settings. Receiving remains available, but transmitting is disabled."
+        String(localized: "The APRS-IS passcode does not match \(settings.identity.fullCallsign). Check the call sign and passcode in Settings. Receiving remains available, but transmitting is disabled.")
     }
 
     let locationService = LocationService()
@@ -143,7 +143,7 @@ final class AppModel {
 
     func startBeaconing() async {
         guard experienceMode == .live else {
-            beaconAlertMessage = "Transmitting is disabled in Demo Mode. Set up your own call sign and APRS-IS passcode first."
+            beaconAlertMessage = String(localized: "Transmitting is disabled in Demo Mode. Set up your own call sign and APRS-IS passcode first.")
             return
         }
         guard locationService.hasLocationPermission else {
@@ -151,7 +151,7 @@ final class AppModel {
             return
         }
         guard settings.identity.isReady else {
-            let message = "Add your amateur call sign and APRS-IS passcode in Settings."
+            let message = String(localized: "Add your amateur call sign and APRS-IS passcode in Settings.")
             lastBeaconError = message
             beaconAlertMessage = message
             return
@@ -196,7 +196,7 @@ final class AppModel {
     func beaconNow() async {
         beaconAlertMessage = nil
         guard experienceMode == .live else {
-            beaconAlertMessage = "Transmitting is disabled in Demo Mode. Set up your own call sign and APRS-IS passcode first."
+            beaconAlertMessage = String(localized: "Transmitting is disabled in Demo Mode. Set up your own call sign and APRS-IS passcode first.")
             return
         }
         guard locationService.hasLocationPermission else {
@@ -204,7 +204,7 @@ final class AppModel {
             return
         }
         guard settings.identity.isReady else {
-            beaconAlertMessage = "Add your amateur call sign and APRS-IS passcode in Settings first."
+            beaconAlertMessage = String(localized: "Add your amateur call sign and APRS-IS passcode in Settings first.")
             return
         }
         guard isAPRSISPasscodeValid else {
@@ -215,7 +215,7 @@ final class AppModel {
         locationService.start(background: isBeaconing)
         await startReceiving()
         guard let location = locationService.currentLocation else {
-            beaconAlertMessage = "Waiting for a GPS position. Try again when GPS accuracy appears."
+            beaconAlertMessage = String(localized: "Waiting for a GPS position. Try again when GPS accuracy appears.")
             return
         }
 
@@ -477,7 +477,7 @@ final class AppModel {
         isSendingBeacon = true
         defer { isSendingBeacon = false }
         guard !isDemoMode else {
-            beaconAlertMessage = "Transmitting is disabled in Demo Mode."
+            beaconAlertMessage = String(localized: "Transmitting is disabled in Demo Mode.")
             return
         }
         guard isAPRSISPasscodeValid else {
@@ -487,8 +487,8 @@ final class AppModel {
         await connectIfNeeded()
         guard connectionState == .connected(verified: true) else {
             lastBeaconError = connectionState == .unverified
-                ? "APRS-IS rejected the passcode for this call sign."
-                : "Waiting for APRS-IS to verify the login."
+                ? String(localized: "APRS-IS rejected the passcode for this call sign.")
+                : String(localized: "Waiting for APRS-IS to verify the login.")
             return
         }
         guard locationService.hasLocationPermission, manually || isBeaconing else { return }
@@ -594,14 +594,14 @@ final class AppModel {
 
     private static func demoStations(centeredAt center: CLLocationCoordinate2D) -> [APRSStation] {
         let samples: [(String, Double, Double, Character, String, Double?, Double?)] = [
-            ("N0DEMO-1", 0.030, -0.035, ">", "Simulated mobile station", 54, 13.4),
-            ("N0DEMO-2", -0.045, 0.025, "[", "Simulated pedestrian station", 210, 1.5),
-            ("N0DEMO-3", 0.070, 0.055, "R", "Simulated recreational vehicle", 128, 22.0),
-            ("N0DEMO-4", -0.090, -0.060, "-", "Simulated home station", nil, nil),
-            ("N0DEMO-5", 0.115, -0.025, "_", "Simulated weather station", nil, nil),
-            ("N0DEMO-6", -0.130, 0.090, "k", "Simulated utility vehicle", 312, 17.0),
-            ("N0DEMO-7", 0.155, 0.035, "Y", "Simulated sailboat", 185, 4.2),
-            ("N0DEMO-8", -0.175, -0.110, "O", "Simulated balloon", 45, 8.0)
+            ("N0DEMO-1", 0.030, -0.035, ">", String(localized: "Simulated mobile station"), 54, 13.4),
+            ("N0DEMO-2", -0.045, 0.025, "[", String(localized: "Simulated pedestrian station"), 210, 1.5),
+            ("N0DEMO-3", 0.070, 0.055, "R", String(localized: "Simulated recreational vehicle"), 128, 22.0),
+            ("N0DEMO-4", -0.090, -0.060, "-", String(localized: "Simulated home station"), nil, nil),
+            ("N0DEMO-5", 0.115, -0.025, "_", String(localized: "Simulated weather station"), nil, nil),
+            ("N0DEMO-6", -0.130, 0.090, "k", String(localized: "Simulated utility vehicle"), 312, 17.0),
+            ("N0DEMO-7", 0.155, 0.035, "Y", String(localized: "Simulated sailboat"), 185, 4.2),
+            ("N0DEMO-8", -0.175, -0.110, "O", String(localized: "Simulated balloon"), 45, 8.0)
         ]
 
         return samples.enumerated().map { index, sample in
@@ -618,7 +618,7 @@ final class AppModel {
                 course: sample.5,
                 speedMetersPerSecond: sample.6,
                 altitudeMeters: index == 7 ? 1_250 : nil,
-                equipment: "Beacon 73 Demo"
+                equipment: String(localized: "Beacon 73 Demo")
             )
         }
     }
@@ -673,20 +673,20 @@ final class AppModel {
     }
 
     private func endLiveActivity() async {
-        await liveActivityController.end(with: liveActivityState(statusOverride: "Stopped"))
+        await liveActivityController.end(with: liveActivityState(statusOverride: .stopped))
     }
 
     private func liveActivityState(
-        statusOverride: String? = nil
+        statusOverride: BeaconActivityAttributes.ConnectionStatus? = nil
     ) -> BeaconActivityAttributes.ContentState {
         let isReady = connectionState == .connected(verified: true)
-        let currentStatus: String = switch connectionState {
-        case .connected(true): "Online"
-        case .connected(false): "Verifying"
-        case .unverified: "Passcode issue"
-        case .failed: "Connection issue"
-        case .connecting: "Connecting"
-        case .disconnected: "Offline"
+        let currentStatus: BeaconActivityAttributes.ConnectionStatus = switch connectionState {
+        case .connected(true): .online
+        case .connected(false): .verifying
+        case .unverified: .passcodeIssue
+        case .failed: .connectionIssue
+        case .connecting: .connecting
+        case .disconnected: .offline
         }
         let status = statusOverride ?? currentStatus
 

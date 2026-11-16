@@ -16,8 +16,10 @@ struct SettingsView: View {
     let showMap: () -> Void
 
     private var receiveRadiusLabel: String {
-        let unit = model.settings.display.distanceUnit == .miles ? "mi" : "km"
-        return "\(model.settings.receiveRadius) \(unit)"
+        let radius = model.settings.receiveRadius
+        return model.settings.display.distanceUnit == .miles
+            ? String(localized: "\(radius) mi")
+            : String(localized: "\(radius) km")
     }
 
     private var appVersionLabel: String {
@@ -30,7 +32,7 @@ struct SettingsView: View {
         case let (version?, nil):
             return version
         default:
-            return "Unavailable"
+            return String(localized: "Unavailable")
         }
     }
 
@@ -64,7 +66,7 @@ struct SettingsView: View {
                             set: { model.settings.identity.ssid = String($0) }
                         )) {
                             ForEach(0...15, id: \.self) { value in
-                                Text(value == 0 ? "0 — No suffix" : String(value)).tag(value)
+                                Text(value == 0 ? String(localized: "0 — No suffix") : String(value)).tag(value)
                             }
                         }
                         .pickerStyle(.menu)
@@ -163,7 +165,7 @@ struct SettingsView: View {
 
                 Section("Beaconing") {
                     Picker("Mode", selection: $model.settings.beaconing.mode) {
-                        ForEach(AppSettings.Beaconing.Mode.allCases) { Text($0.rawValue).tag($0) }
+                        ForEach(AppSettings.Beaconing.Mode.allCases) { Text($0.title).tag($0) }
                     }
                     if model.settings.beaconing.mode == .timed {
                         Stepper(
@@ -207,7 +209,7 @@ struct SettingsView: View {
 
                 Section("Appearance") {
                     Picker("Theme", selection: $model.settings.display.theme) {
-                        ForEach(AppSettings.Display.Theme.allCases) { Text($0.rawValue).tag($0) }
+                        ForEach(AppSettings.Display.Theme.allCases) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented)
                     .onChange(of: model.settings.display.theme) { _, _ in
@@ -217,7 +219,7 @@ struct SettingsView: View {
 
                 Section("Units") {
                     Picker("Distance", selection: $model.settings.display.distanceUnit) {
-                        ForEach(AppSettings.Display.DistanceUnit.allCases) { Text($0.rawValue).tag($0) }
+                        ForEach(AppSettings.Display.DistanceUnit.allCases) { Text($0.title).tag($0) }
                     }
                 }
 
@@ -231,7 +233,9 @@ struct SettingsView: View {
 
                 Section {
                     LabeledContent("Location Permission", value: model.locationService.authorizationStatus.label)
-                    LabeledContent("Live Activities", value: liveActivitiesEnabled ? "On" : "Off")
+                    LabeledContent("Live Activities") {
+                        Text(liveActivitiesEnabled ? "On" : "Off")
+                    }
                     if model.locationService.authorizationStatus == .notDetermined {
                         Button("Request Location Access") { model.locationService.requestPermission() }
                     } else {
@@ -308,7 +312,7 @@ struct SettingsView: View {
                     model.settings.identity.callsign = result.callsign
                     model.settings.identity.passcode = String(result.passcode)
                     model.saveSettings()
-                    passcodeRequestConfirmation = "Your APRS-IS passcode was approved and saved for \(result.callsign)."
+                    passcodeRequestConfirmation = String(localized: "Your APRS-IS passcode was approved and saved for \(result.callsign).")
                 }
             }
             .sheet(isPresented: $isShowingDonation) {
@@ -404,7 +408,7 @@ private struct TipJarView: View {
                 .foregroundStyle(.secondary)
             } else if store.products.isEmpty {
                 if store.didAttemptLoad {
-                    Text(store.notice ?? "Tip options are currently unavailable.")
+                    Text(store.notice ?? String(localized: "Tip options are currently unavailable."))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
@@ -597,7 +601,7 @@ private struct PasscodeRequestSheet: View {
                 if let licenseeName = record.licenseeName {
                     LabeledContent("Licensee", value: licenseeName)
                 }
-                LabeledContent("Status", value: record.status)
+                LabeledContent("Status", value: record.statusDescription)
                 if let operatorClass = record.operatorClassDescription {
                     LabeledContent("Class", value: operatorClass)
                 }
@@ -666,8 +670,8 @@ private struct PasscodeRequestSheet: View {
 }
 
 private struct SettingsInfoButton: View {
-    let title: String
-    let text: String
+    let title: LocalizedStringKey
+    let text: LocalizedStringKey
     @State private var isShowingHelp = false
 
     var body: some View {
@@ -703,9 +707,11 @@ private struct APRSISDiagnosticsView: View {
             Section("Connection") {
                 LabeledContent("Status", value: model.connectionState.label)
                 LabeledContent("Server", value: "\(model.settings.server.host):\(model.settings.server.port)")
-                LabeledContent("Filter", value: model.aprsFilterDescription)
+                LabeledContent("Filter", value: model.locationService.currentLocation == nil
+                    ? String(localized: "Waiting for GPS")
+                    : model.aprsFilterDescription)
                 LabeledContent("Last stream data") {
-                    Text(model.lastStreamActivityAt?.formatted(date: .omitted, time: .standard) ?? "None")
+                    Text(model.lastStreamActivityAt?.formatted(date: .omitted, time: .standard) ?? String(localized: "None"))
                         .foregroundStyle(model.lastStreamActivityAt == nil ? .secondary : .primary)
                 }
             }

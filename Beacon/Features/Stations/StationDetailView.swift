@@ -31,14 +31,14 @@ struct StationDetailView: View {
                     if let from { LabeledContent("Distance", value: distance(from: from)) }
                     if let speed = station.speedMetersPerSecond {
                         LabeledContent("Speed", value: model.settings.display.speedUnit == .mph
-                            ? String(format: "%.0f mph", speed * 2.23694)
-                            : String(format: "%.0f km/h", speed * 3.6))
+                            ? String(format: String(localized: "%.0f mph"), locale: .current, speed * 2.23694)
+                            : String(format: String(localized: "%.0f km/h"), locale: .current, speed * 3.6))
                     }
                     if let course = station.course { LabeledContent("Course", value: String(format: "%.0f°", course)) }
                     if let altitude = station.altitudeMeters {
                         LabeledContent("Altitude", value: model.settings.display.distanceUnit == .miles
-                            ? String(format: "%.0f ft", altitude * 3.28084)
-                            : String(format: "%.0f m", altitude))
+                            ? String(format: String(localized: "%.0f ft"), locale: .current, altitude * 3.28084)
+                            : String(format: String(localized: "%.0f m"), locale: .current, altitude))
                     }
                 }
                 if station.equipment != nil {
@@ -59,7 +59,7 @@ struct StationDetailView: View {
         let second = CLLocation(latitude: station.coordinate.latitude, longitude: station.coordinate.longitude)
         let meters = first.distance(from: second)
         return model.settings.display.distanceUnit == .miles
-            ? String(format: "%.1f mi", meters / 1_609.344)
-            : String(format: "%.1f km", meters / 1_000)
+            ? String(format: String(localized: "%.1f mi"), locale: .current, meters / 1_609.344)
+            : String(format: String(localized: "%.1f km"), locale: .current, meters / 1_000)
     }
 }

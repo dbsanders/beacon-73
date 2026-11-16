@@ -476,6 +476,23 @@ final class BeaconCoreTests: XCTestCase {
         ))
     }
 
+    func testPasscodeFailureUsesAppMessageInsteadOfServerText() {
+        let data = Data(
+            #"{"error":{"code":"attestation_required","message":"attestation must be explicitly accepted"}}"#.utf8
+        )
+
+        XCTAssertThrowsError(try PasscodeRequestClient.decodeResponse(data: data, statusCode: 400)) {
+            guard case PasscodeRequestClient.RequestError.attestationRequired = $0 else {
+                return XCTFail("Expected the app's attestation error, got \($0)")
+            }
+        }
+        XCTAssertThrowsError(try PasscodeRequestClient.decodeResponse(data: Data(), statusCode: 429)) {
+            guard case PasscodeRequestClient.RequestError.rateLimited = $0 else {
+                return XCTFail("Expected the app's rate limit error, got \($0)")
+            }
+        }
+    }
+
     func testReceiveConnectionUsesOnlineStatusRegardlessOfTransmitValidation() {
         XCTAssertEqual(AppModel.ConnectionState.connected(verified: true).shortLabel, "Online")
         XCTAssertEqual(AppModel.ConnectionState.connected(verified: false).shortLabel, "Online")

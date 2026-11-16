@@ -16,14 +16,22 @@ struct CallsignRegistryRecord: Decodable, Equatable {
     let operatorClass: String?
     let licenseeName: String?
 
+    var statusDescription: String {
+        switch status {
+        case "Active": String(localized: "Active")
+        case "Assigned": String(localized: "Assigned")
+        default: status
+        }
+    }
+
     var operatorClassDescription: String? {
         switch operatorClass {
-        case "E": "Amateur Extra"
-        case "G": "General"
-        case "T": "Technician"
-        case "A": "Advanced"
-        case "P": "Technician Plus"
-        case "N": "Novice"
+        case "E": String(localized: "Amateur Extra")
+        case "G": String(localized: "General")
+        case "T": String(localized: "Technician")
+        case "A": String(localized: "Advanced")
+        case "P": String(localized: "Technician Plus")
+        case "N": String(localized: "Novice")
         default: operatorClass
         }
     }
@@ -42,11 +50,15 @@ struct CallsignRegistryLookup: Decodable, Equatable {
         }
 
         var recordTitle: String {
-            registryCode == "ISED" ? "Canadian license record" : "FCC license record"
+            registryCode == "ISED"
+                ? String(localized: "Canadian license record")
+                : String(localized: "FCC license record")
         }
 
         var sourceDescription: String {
-            registryCode == "ISED" ? "Public Canadian ISED data" : "Public FCC ULS data"
+            registryCode == "ISED"
+                ? String(localized: "Public Canadian ISED data")
+                : String(localized: "Public FCC ULS data")
         }
     }
 
@@ -84,16 +96,22 @@ struct PasscodeRequestClient {
         case notConfigured
         case invalidCallsign
         case invalidResponse
+        case attestationRequired
+        case rateLimited
         case rejected(message: String)
 
         var errorDescription: String? {
             switch self {
             case .notConfigured:
-                "Passcode requests are not configured in this version of Beacon 73."
+                String(localized: "Passcode requests are not configured in this version of Beacon 73.")
             case .invalidCallsign:
-                "Enter a valid amateur-radio call sign before requesting a passcode."
+                String(localized: "Enter a valid amateur-radio call sign before requesting a passcode.")
             case .invalidResponse:
-                "The passcode service returned an unexpected response. Please try again."
+                String(localized: "The passcode service returned an unexpected response. Please try again.")
+            case .attestationRequired:
+                String(localized: "Accept the callsign authorization attestation before requesting a passcode.")
+            case .rateLimited:
+                String(localized: "Too many passcode requests. Please wait and try again.")
             case .rejected(let message):
                 message
             }
@@ -107,7 +125,7 @@ struct PasscodeRequestClient {
 
     private struct ErrorEnvelope: Decodable {
         struct Details: Decodable {
-            let message: String
+            let code: String
         }
 
         let error: Details
@@ -143,10 +161,7 @@ struct PasscodeRequestClient {
             throw RequestError.invalidResponse
         }
         guard (200...299).contains(httpResponse.statusCode) else {
-            if let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data) {
-                throw RequestError.rejected(message: envelope.error.message)
-            }
-            throw RequestError.rejected(message: "The callsign registry lookup is unavailable.")
+            throw RequestError.rejected(message: String(localized: "The callsign registry lookup is unavailable."))
         }
         guard let lookup = try? JSONDecoder().decode(CallsignRegistryLookup.self, from: data) else {
             throw RequestError.invalidResponse
@@ -192,14 +207,17 @@ struct PasscodeRequestClient {
 
     static func decodeResponse(data: Data, statusCode: Int) throws -> PasscodeRequestResult {
         guard (200...299).contains(statusCode) else {
-            if let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data) {
-                throw RequestError.rejected(message: envelope.error.message)
+            let code = (try? JSONDecoder().decode(ErrorEnvelope.self, from: data))?.error.code
+            switch code {
+            case "invalid_callsign": throw RequestError.invalidCallsign
+            case "attestation_required": throw RequestError.attestationRequired
+            case "rate_limited": throw RequestError.rateLimited
+            default:
+                if statusCode == 429 { throw RequestError.rateLimited }
+                throw RequestError.rejected(
+                    message: String(localized: "The passcode request could not be approved. Please try again.")
+                )
             }
-            throw RequestError.rejected(
-                message: statusCode == 429
-                    ? "Too many passcode requests. Please wait and try again."
-                    : "The passcode request could not be approved. Please try again."
-            )
         }
 
         guard let result = try? JSONDecoder().decode(PasscodeRequestResult.self, from: data),

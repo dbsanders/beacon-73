@@ -1,0 +1,16 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSLocationWhenInUseUsageDescription" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beacon 73 会使用您的位置信息在地图上显示您的位置，并在您启动发送后通过 APRS 发送位置信标。开启自动发送后，即使锁屏或使用其他 App，也会继续发送，直到您将其关闭。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

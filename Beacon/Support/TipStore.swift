@@ -40,7 +40,7 @@ final class TipStore {
             return
         } catch {
             products = []
-            notice = "Tip options couldn’t be loaded. Please try again."
+            notice = String(localized: "Tip options couldn’t be loaded. Please try again.")
         }
     }
 
@@ -60,23 +60,23 @@ final class TipStore {
             switch try await product.purchase() {
             case let .success(verification):
                 guard case let .verified(transaction) = verification else {
-                    notice = "The App Store couldn’t verify this tip. No contribution was recorded."
+                    notice = String(localized: "The App Store couldn’t verify this tip. No contribution was recorded.")
                     return
                 }
 
                 await transaction.finish()
-                notice = "Thank you for supporting Beacon 73—73 from K6BAT."
+                notice = String(localized: "Thank you for supporting Beacon 73—73 from K6BAT.")
             case .pending:
-                notice = "This tip is pending App Store approval."
+                notice = String(localized: "This tip is pending App Store approval.")
             case .userCancelled:
                 break
             @unknown default:
-                notice = "The tip couldn’t be completed. Please try again."
+                notice = String(localized: "The tip couldn’t be completed. Please try again.")
             }
         } catch is CancellationError {
             return
         } catch {
-            notice = "The tip couldn’t be completed. Please try again."
+            notice = String(localized: "The tip couldn’t be completed. Please try again.")
         }
     }
 

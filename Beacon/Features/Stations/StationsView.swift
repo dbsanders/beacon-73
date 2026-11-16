@@ -35,7 +35,7 @@ struct StationsView: View {
                                     .background(.blue.opacity(0.14), in: Circle())
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(station.callsign).font(.headline.monospaced())
-                                    Text(station.comment.isEmpty ? (station.equipment ?? "APRS station") : station.comment)
+                                    Text(station.comment.isEmpty ? (station.equipment ?? String(localized: "APRS station")) : station.comment)
                                         .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                                 }
                                 Spacer()
@@ -52,24 +52,26 @@ struct StationsView: View {
     }
 
     private var receiveRadiusDescription: String {
-        "Recent stations heard within \(formattedReceiveRadius) of your location"
+        String(localized: "Recent stations heard within \(formattedReceiveRadius) of your location")
     }
 
     private var formattedReceiveRadius: String {
-        let unit = model.settings.display.distanceUnit == .miles ? "miles" : "km"
-        return "\(model.settings.receiveRadius) \(unit)"
+        let radius = model.settings.receiveRadius
+        return model.settings.display.distanceUnit == .miles
+            ? String(localized: "\(radius) miles")
+            : String(localized: "\(radius) km")
     }
 
     private var emptyStateDescription: String {
         if !model.settings.identity.isReady {
-            return "Add your call sign and APRS-IS passcode in Settings to receive nearby stations."
+            return String(localized: "Add your call sign and APRS-IS passcode in Settings to receive nearby stations.")
         }
         if !model.connectionState.isConnected {
-            return "Waiting for APRS-IS. Nearby stations will appear after GPS and the server connect."
+            return String(localized: "Waiting for APRS-IS. Nearby stations will appear after GPS and the server connect.")
         }
         if model.receivedPacketCount == 0 {
-            return "Ready, but no APRS-IS packets have arrived yet. The app will reconnect automatically if the stream drops."
+            return String(localized: "Ready, but no APRS-IS packets have arrived yet. The app will reconnect automatically if the stream drops.")
         }
-        return "Received \(model.receivedPacketCount) APRS packets; \(model.unsupportedPacketCount) did not contain a supported position. No stations heard in the last 35 minutes are currently within \(formattedReceiveRadius)."
+        return String(localized: "Received \(model.receivedPacketCount) APRS packets; \(model.unsupportedPacketCount) did not contain a supported position. No stations heard in the last 35 minutes are currently within \(formattedReceiveRadius).")
     }
 }

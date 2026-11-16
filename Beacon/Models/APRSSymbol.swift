@@ -118,13 +118,15 @@ enum APRSSymbolCatalog {
             code = characters.first ?? ">"
         }
         return all.first { $0.table == table && $0.code == code }
-            ?? APRSSymbol(table: table, code: code, name: "Custom", supportsOverlay: false)
+            ?? APRSSymbol(table: table, code: code, name: String(localized: "Custom"), supportsOverlay: false)
     }
 
     private static func make(
         table: APRSSymbolTable,
-        entries: [(Character, String, Bool)]
+        entries: [(Character, LocalizedStringResource, Bool)]
     ) -> [APRSSymbol] {
-        entries.map { APRSSymbol(table: table, code: $0.0, name: $0.1, supportsOverlay: $0.2) }
+        entries.map { code, name, supportsOverlay in
+            APRSSymbol(table: table, code: code, name: String(localized: name), supportsOverlay: supportsOverlay)
+        }
     }
 }

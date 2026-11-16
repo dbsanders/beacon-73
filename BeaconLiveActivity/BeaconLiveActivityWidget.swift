@@ -88,9 +88,21 @@ struct BeaconLiveActivityWidget: Widget {
             Circle()
                 .fill(state.isConnected ? .green : .orange)
                 .frame(width: 8, height: 8)
-            Text(state.connectionStatus)
+            Text(connectionLabel(for: state.connectionStatus))
                 .font(.caption.weight(.semibold))
                 .lineLimit(1)
+        }
+    }
+
+    private func connectionLabel(for status: BeaconActivityAttributes.ConnectionStatus) -> LocalizedStringKey {
+        switch status {
+        case .online: "Online"
+        case .verifying: "Verifying"
+        case .passcodeIssue: "Passcode issue"
+        case .connectionIssue: "Connection issue"
+        case .connecting: "Connecting"
+        case .offline: "Offline"
+        case .stopped: "Stopped"
         }
     }
 

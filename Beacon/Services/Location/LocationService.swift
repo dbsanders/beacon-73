@@ -15,7 +15,7 @@ final class LocationService: NSObject, @preconcurrency CLLocationManagerDelegate
         authorizationStatus == .authorizedAlways || authorizationStatus == .authorizedWhenInUse
     }
 
-    static let permissionRequiredMessage = "Location access is required to beacon your position. Enable Location access for Beacon 73 in iOS Settings, then turn beaconing on again."
+    static let permissionRequiredMessage = String(localized: "Location access is required to beacon your position. Enable Location access for Beacon 73 in iOS Settings, then turn beaconing on again.")
 
     private let manager: CLLocationManager
     private var wantsLocationUpdates = false

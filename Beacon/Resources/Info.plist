@@ -39,6 +39,8 @@
 	<string>Beacon 73 uses your location to show your position and transmit APRS beacons you start. Auto-beaconing continues while the screen is locked or you use another app, until you stop it.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>UIPrefersShowingLanguageSettings</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

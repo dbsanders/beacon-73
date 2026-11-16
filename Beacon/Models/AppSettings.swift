@@ -74,6 +74,14 @@ struct AppSettings: Codable, Equatable {
             case manual = "Manual"
             var id: Self { self }
 
+            var title: String {
+                switch self {
+                case .smart: String(localized: "Smart")
+                case .timed: String(localized: "Timed")
+                case .manual: String(localized: "Manual")
+                }
+            }
+
             init(from decoder: Decoder) throws {
                 let container = try decoder.singleValueContainer()
                 let storedValue = try container.decode(String.self)
@@ -105,6 +113,13 @@ struct AppSettings: Codable, Equatable {
             case dark = "Dark"
             case light = "Light"
             var id: Self { self }
+
+            var title: String {
+                switch self {
+                case .dark: String(localized: "Dark")
+                case .light: String(localized: "Light")
+                }
+            }
         }
 
         enum SpeedUnit: String, Codable, CaseIterable, Identifiable {
@@ -117,6 +132,13 @@ struct AppSettings: Codable, Equatable {
             case miles = "Miles"
             case kilometers = "Kilometers"
             var id: Self { self }
+
+            var title: String {
+                switch self {
+                case .miles: String(localized: "Miles")
+                case .kilometers: String(localized: "Kilometers")
+                }
+            }
         }
 
         var speedUnit: SpeedUnit {

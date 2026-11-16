@@ -70,7 +70,7 @@ struct DashboardView: View {
                 )) {
                     Button("OK", role: .cancel) { }
                 } message: {
-                    Text(model.beaconAlertMessage ?? "Unknown error")
+                    Text(model.beaconAlertMessage ?? String(localized: "Unknown error"))
                 }
             }
         }
@@ -338,14 +338,14 @@ private struct APRSConnectionIndicator: View {
                           : (isTransmitting ? .orange : (model.connectionState.isConnected ? .green : .secondary)))
                     .frame(width: 8, height: 8)
                 Text(model.isDemoMode
-                     ? "Demo"
-                     : (isTransmitting ? "APRS TX" : model.connectionState.shortLabel))
+                     ? String(localized: "Demo")
+                     : (isTransmitting ? String(localized: "APRS TX") : model.connectionState.shortLabel))
                     .font(.caption.weight(.medium))
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(model.isDemoMode
-                                ? "Demo Mode"
-                                : (isTransmitting ? "APRS transmitting" : model.connectionState.shortLabel))
+                                ? String(localized: "Demo Mode")
+                                : (isTransmitting ? String(localized: "APRS transmitting") : model.connectionState.shortLabel))
         }
     }
 }
@@ -419,7 +419,7 @@ private struct AutoBeaconButton: View {
 
                         Text(model.isDemoMode ? "Auto-beaconing unavailable in Demo"
                              : (!model.locationService.hasLocationPermission ? "Location access required" : isManual ? "Manual beaconing" : !hasCallsign ? "Set your callsign"
-                                : "Auto-beaconing is \(isOn ? "ON" : "OFF")"))
+                                : (isOn ? "Auto-beaconing is ON" : "Auto-beaconing is OFF")))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(isOn ? activeColor : Color.secondary)
                             .multilineTextAlignment(.center)
@@ -531,8 +531,11 @@ private struct BeaconSummaryPanel: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { timeline in
             HStack(spacing: 12) {
-                summaryValue("Last beacon", value: model.lastBeaconAt?.relativeLabel(at: timeline.date) ?? "None yet")
-                summaryValue("Next beacon", value: nextStatus(at: timeline.date))
+                summaryValue(
+                    String(localized: "Last beacon"),
+                    value: model.lastBeaconAt?.relativeLabel(at: timeline.date) ?? String(localized: "None yet")
+                )
+                summaryValue(String(localized: "Next beacon"), value: nextStatus(at: timeline.date))
             }
             .foregroundStyle(.secondary)
         }
@@ -547,16 +550,16 @@ private struct BeaconSummaryPanel: View {
     }
 
     private func nextStatus(at now: Date) -> String {
-        if model.isDemoMode { return "Demo" }
-        if model.settings.beaconing.mode == .manual { return "Manual" }
-        if !model.isBeaconing { return "Paused" }
-        if model.connectionState != .connected(verified: true) { return "Waiting for connection" }
-        guard let location = model.locationService.currentLocation else { return "Waiting for GPS" }
+        if model.isDemoMode { return String(localized: "Demo") }
+        if model.settings.beaconing.mode == .manual { return String(localized: "Manual") }
+        if !model.isBeaconing { return String(localized: "Paused") }
+        if model.connectionState != .connected(verified: true) { return String(localized: "Waiting for connection") }
+        guard let location = model.locationService.currentLocation else { return String(localized: "Waiting for GPS") }
         if location.horizontalAccuracy < 0 || location.horizontalAccuracy > model.settings.beaconing.maximumAccuracyMeters {
-            return "Low GPS accuracy"
+            return String(localized: "Low GPS accuracy")
         }
-        if model.lastBeaconError != nil { return "Retrying" }
-        return model.nextBeaconAt?.countdownLabel(at: now) ?? "Preparing"
+        if model.lastBeaconError != nil { return String(localized: "Retrying") }
+        return model.nextBeaconAt?.countdownLabel(at: now) ?? String(localized: "Preparing")
     }
 }
 
@@ -726,7 +729,7 @@ struct APRSSymbolMapMarker: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: isCompact)
-        .accessibilityLabel(callsign.isEmpty ? "My Position" : callsign)
+        .accessibilityLabel(callsign.isEmpty ? String(localized: "My Position") : callsign)
     }
 }
 

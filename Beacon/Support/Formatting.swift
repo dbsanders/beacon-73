@@ -8,9 +8,9 @@ extension Date {
 
     func relativeLabel(at now: Date) -> String {
         let seconds = max(0, Int(now.timeIntervalSince(self)))
-        if seconds < 60 { return "\(seconds)s ago" }
-        if seconds < 3_600 { return "\(seconds / 60)m \(seconds % 60)s ago" }
-        return "\(seconds / 3_600)h \((seconds % 3_600) / 60)m \(seconds % 60)s ago"
+        if seconds < 60 { return String(localized: "\(seconds)s ago") }
+        if seconds < 3_600 { return String(localized: "\(seconds / 60)m \(seconds % 60)s ago") }
+        return String(localized: "\(seconds / 3_600)h \((seconds % 3_600) / 60)m \(seconds % 60)s ago")
     }
 
     var countdownLabel: String {
@@ -19,7 +19,9 @@ extension Date {
 
     func countdownLabel(at now: Date) -> String {
         let seconds = max(0, Int(timeIntervalSince(now).rounded()))
-        return seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
+        return seconds < 60
+            ? String(localized: "\(seconds)s")
+            : String(localized: "\(seconds / 60)m \(seconds % 60)s")
     }
 }
 
@@ -63,12 +65,12 @@ extension Character {
 extension CLAuthorizationStatus {
     var label: String {
         switch self {
-        case .notDetermined: "Not requested"
-        case .restricted: "Restricted"
-        case .denied: "Denied"
-        case .authorizedAlways: "Always"
-        case .authorizedWhenInUse: "While using"
-        @unknown default: "Unknown"
+        case .notDetermined: String(localized: "Not requested")
+        case .restricted: String(localized: "Restricted")
+        case .denied: String(localized: "Denied")
+        case .authorizedAlways: String(localized: "Always")
+        case .authorizedWhenInUse: String(localized: "While using")
+        @unknown default: String(localized: "Unknown")
         }
     }
 }

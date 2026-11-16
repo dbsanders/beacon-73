@@ -2,6 +2,10 @@
 
 Ready-to-paste U.S. English metadata. Review in App Store Connect before publishing.
 
+## What's New in Version 1.3.0
+
+Beacon 73 now supports Simplified Chinese throughout the app, including callsign and APRS-IS passcode setup and Live Activities. Beacon uses your preferred supported language. You can also choose a language for Beacon 73 in iOS Settings.
+
 ## What's New in Version 1.2.0
 
 • Choose a Light or Dark appearance in Settings.
@@ -23,11 +27,11 @@ Simple APRS Beaconing
 
 ## Promotional text
 
-Built by Bret, K6BAT, for fellow hams. Beacon your position, see nearby stations, and explore APRS with a clear, friendly iPhone app.
+Built by Bret, K6BAT, for fellow hams. Beacon your position, see nearby stations, and explore APRS with a clear, friendly app for iPhone and iPad.
 
 ## Description
 
-Hi, I’m Bret, K6BAT. I built Beacon 73 because I wanted APRS beaconing on the iPhone to feel simple, clear, and approachable—whether you’re heading out for a drive, checking activity nearby, or just learning how APRS works.
+Hi, I’m Bret, K6BAT. I built Beacon 73 because I wanted APRS beaconing on iPhone and iPad to feel simple, clear, and approachable—whether you’re heading out for a drive, checking activity nearby, or just learning how APRS works.
 
 Beacon 73 gives you a focused dashboard for sharing your position and keeping an eye on your beaconing status.
 
@@ -54,7 +58,7 @@ Demo Mode uses simulated stations, does not request your location, and cannot tr
 
 Beacon 73 is independently developed and free to use. Optional one-time tips help support continued development, but every core feature remains available whether or not you contribute.
 
-Live operation requires a valid amateur-radio callsign, an APRS-IS passcode, location access, and an internet connection. APRS transmissions are public by design. Beacon 73 is not an emergency, navigation, dispatch, or safety-of-life service.
+Beacon 73 connects to APRS-IS over the internet. Sending beacons requires a valid amateur-radio callsign, an APRS-IS passcode, and location access. APRS transmissions are public by design. Beacon 73 is not an emergency, navigation, dispatch, or safety-of-life service.
 
 I hope Beacon 73 makes your time with APRS a little easier. Questions and thoughtful feedback are always welcome.
 
@@ -63,10 +67,10 @@ Bret · K6BAT
 
 ## Keywords
 
-APRS,ham radio,amateur radio,beacon,APRS-IS,callsign,packet radio,map,tracker
+ham radio,amateur radio,APRS-IS,callsign,packet radio,map,tracker
 
-## Suggested tip product names and descriptions
+## Tip product names and suggested descriptions
 
-- Small tip — “A small thank-you for Beacon 73.”
-- Medium tip — “Help support ongoing Beacon 73 development.”
-- Large tip — “A generous contribution from a fellow ham.”
+- Buy me a coffee ☕ — “A small thank-you for Beacon 73.”
+- Buy Me a Burrito 🌯 — “Help support ongoing Beacon 73 development.”
+- Fund My Next Bad Idea 🚀 — “A generous contribution from a fellow ham.”
