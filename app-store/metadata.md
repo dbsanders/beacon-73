@@ -2,6 +2,10 @@
 
 Ready-to-paste U.S. English metadata. Review in App Store Connect before publishing.
 
+## What's New in Version 1.3.1
+
+Fixed a freeze when opening station details from the full-screen map. Tap Done in station details to return to the map.
+
 ## What's New in Version 1.3.0
 
 Beacon 73 now supports Simplified Chinese throughout the app, including callsign and APRS-IS passcode setup and Live Activities. Beacon uses your preferred supported language. You can also choose a language for Beacon 73 in iOS Settings.

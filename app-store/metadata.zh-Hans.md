@@ -1,6 +1,6 @@
 # Beacon 73 App Store copy · 简体中文
 
-Simplified Chinese App Store metadata submitted with version 1.3.0, build 1.
+Simplified Chinese App Store metadata, introduced in version 1.3.0.
 
 ## Name
 
@@ -52,7 +52,11 @@ Bret · K6BAT
 
 业余无线电,分组无线电,位置追踪,电台地图,GPS,呼号查询,无线电,HAM,APRS-IS
 
-## What's New
+## What's New in Version 1.3.1
+
+修复了在全屏地图上打开电台详情时应用无响应的问题。在电台详情中点按“完成”即可返回地图。
+
+## What's New in Version 1.3.0
 
 • 新增简体中文界面，涵盖首次设置、地图、呼号和 APRS-IS 密码设置，以及锁屏和灵动岛上的实时活动。
 • Beacon 73 会根据您的语言偏好选择显示语言。您也可以在 iOS 设置中为 Beacon 73 单独选择语言。

@@ -8,6 +8,8 @@ struct DashboardView: View {
     @State private var expandedMapPosition: MapCameraPosition = .region(.preview)
     @State private var expandedMapRegion = MKCoordinateRegion.preview
     @State private var expandedMapRegionBeforeStationDetail: MKCoordinateRegion?
+    @State private var expandedMapStation: APRSStation?
+    @State private var landscapeMapStation: APRSStation?
     @State private var didCenterOnUser = false
     @State private var isShowingExpandedMap = false
     let showSettings: () -> Void
@@ -57,10 +59,6 @@ struct DashboardView: View {
                 }
                 .toolbar(.hidden, for: .navigationBar)
                 .toolbar(isLandscape ? .hidden : .visible, for: .tabBar)
-                .sheet(item: Bindable(model).selectedStation, onDismiss: restoreExpandedMapAfterStationDetail) { station in
-                    StationDetailView(station: station, from: userCoordinate)
-                        .presentationDetents([.medium])
-                }
                 .fullScreenCover(isPresented: $isShowingExpandedMap) {
                     expandedMap
                 }
@@ -132,7 +130,16 @@ struct DashboardView: View {
             aprsMap(
                 position: $expandedMapPosition,
                 visibleRegion: $expandedMapRegion,
-                centersOnUser: false
+                centersOnUser: false,
+                selectedStation: Binding(
+                    get: { expandedMapStation },
+                    set: { station in
+                        if station != nil, expandedMapStation == nil {
+                            expandedMapRegionBeforeStationDetail = expandedMapRegion
+                        }
+                        expandedMapStation = station
+                    }
+                )
             )
                 .ignoresSafeArea(edges: .bottom)
                 .navigationTitle("Map")
@@ -143,10 +150,18 @@ struct DashboardView: View {
                     }
                 }
         }
+        .sheet(item: $expandedMapStation, onDismiss: restoreExpandedMapAfterStationDetail) { station in
+            stationDetails(station)
+        }
     }
 
     private var landscapeMap: some View {
-        aprsMap(position: $mapPosition, visibleRegion: $visibleMapRegion, centersOnUser: true)
+        aprsMap(
+            position: $mapPosition,
+            visibleRegion: $visibleMapRegion,
+            centersOnUser: true,
+            selectedStation: $landscapeMapStation
+        )
             .ignoresSafeArea()
             .overlay(alignment: .topLeading) {
                 APRSConnectionIndicator()
@@ -166,12 +181,21 @@ struct DashboardView: View {
                 .accessibilityLabel("Settings")
                 .padding(12)
             }
+            .sheet(item: $landscapeMapStation) { station in
+                stationDetails(station)
+            }
+    }
+
+    private func stationDetails(_ station: APRSStation) -> some View {
+        StationDetailView(station: station, from: userCoordinate, showsDoneButton: true)
+            .presentationDetents([.medium])
     }
 
     private func aprsMap(
         position: Binding<MapCameraPosition>,
         visibleRegion: Binding<MKCoordinateRegion>,
-        centersOnUser: Bool
+        centersOnUser: Bool,
+        selectedStation: Binding<APRSStation?>? = nil
     ) -> some View {
         GeometryReader { geometry in
             MapReader { proxy in
@@ -187,18 +211,10 @@ struct DashboardView: View {
                 } ?? [] : []
                 let presentations = StationAnnotationLayout.presentations(
                     candidates: candidates, viewport: CGRect(origin: .zero, size: geometry.size),
-                    reserved: ownBounds, selectedID: model.selectedStation?.id
+                    reserved: ownBounds, selectedID: selectedStation?.wrappedValue?.id
                 )
 
-                Map(position: position, selection: Binding(
-                    get: { model.selectedStation?.id },
-                    set: { id in
-                        if id != nil, model.selectedStation == nil, isShowingExpandedMap {
-                            expandedMapRegionBeforeStationDetail = expandedMapRegion
-                        }
-                        model.selectedStation = model.nearbyStations.first { $0.id == id }
-                    }
-                )) {
+                Map(position: position) {
                     if !model.isDemoMode {
                         Annotation(
                             "",
@@ -214,7 +230,7 @@ struct DashboardView: View {
 
                     ForEach(model.nearbyStations) { station in
                         Annotation("", coordinate: station.coordinate, anchor: .bottom) {
-                            APRSSymbolMapMarker(
+                            let marker = APRSSymbolMapMarker(
                                 symbol: station.symbolSelection,
                                 overlay: station.symbolOverlay,
                                 callsign: station.callsign,
@@ -222,8 +238,18 @@ struct DashboardView: View {
                                 isCompact: presentations[station.id] == .dot,
                                 showsCallsign: presentations[station.id] != .icon
                             )
+                            if let selectedStation {
+                                Button {
+                                    selectedStation.wrappedValue = station
+                                } label: {
+                                    marker.contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(station.callsign)
+                            } else {
+                                marker
+                            }
                         }
-                        .tag(station.id)
                     }
 
                 }
@@ -268,6 +294,7 @@ struct DashboardView: View {
     private func showExpandedMap() {
         expandedMapRegion = visibleMapRegion
         expandedMapPosition = .region(visibleMapRegion)
+        expandedMapStation = nil
         expandedMapRegionBeforeStationDetail = nil
         isShowingExpandedMap = true
     }

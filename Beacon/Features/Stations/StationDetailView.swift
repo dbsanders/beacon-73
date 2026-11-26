@@ -4,8 +4,10 @@ import SwiftUI
 
 struct StationDetailView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
     let station: APRSStation
     let from: CLLocationCoordinate2D?
+    var showsDoneButton = false
 
     var body: some View {
         NavigationStack {
@@ -51,6 +53,13 @@ struct StationDetailView: View {
             }
             .navigationTitle(station.callsign)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if showsDoneButton {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+            }
         }
     }
 

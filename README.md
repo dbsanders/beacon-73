@@ -2,12 +2,12 @@
 
 Beacon 73 is a SwiftUI APRS-IS client for viewing nearby amateur-radio stations and sharing your position over an internet connection. It supports automatic and manual beaconing, a map-first dashboard, and Live Activity status on the Lock Screen and supported iPhones’ Dynamic Island.
 
-The source submitted for **1.3.0**, build 1, is tagged `appstore/1.3.0`. Earlier submissions are tagged `appstore/1.2.0`, `appstore/1.1.1`, and `appstore/1.1`.
+App Store release source is tagged by version, including `appstore/1.3.0`, `appstore/1.2.0`, `appstore/1.1.1`, and `appstore/1.1`.
 
 ## Features
 
 - Adaptive home-screen map with a shared map and beacon-control card, plus last/next beacon status.
-- Full-screen map on tap and a map-only home screen in landscape.
+- Full-screen map on tap and a map-only home screen in landscape. Tap a station on either map to see its details, then tap Done to return to the map.
 - Nearby station symbols and call signs that adapt to overlap on screen: full labels where space permits, icons where labels crowd, and dots where icons overlap too much.
 - Stations list sorted by last heard (newest first), station details, and filters for moving, fixed, and weather stations. Live stations expire from the list and map after 35 minutes without a decoded position update, even when no new packets arrive. Expiration is checked every second while the app is active and when returning to the foreground.
 - Track map showing the most recent 30 successfully transmitted positions for the current app session.
@@ -91,7 +91,7 @@ For background beaconing, test on a physical iPhone with **While Using the App**
 
 ## Release bookkeeping
 
-The app’s Version and Build fields come from `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in the Xcode project. Beacon and BeaconLiveActivity are synchronized at version 1.3.0, build 1. The `appstore/1.1.1` source includes the extension version correction made after the initial 1.1.1 archive was created; that archive is not an exact build of that tag. The `appstore/1.2.0` tag identifies the 1.2.0 release source. Earlier submitted release tags remain unchanged.
+The app’s Version and Build fields come from `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in the Xcode project. Beacon and BeaconLiveActivity are synchronized at version 1.3.1, build 1. The `appstore/1.1.1` source includes the extension version correction made after the initial 1.1.1 archive was created; that archive is not an exact build of that tag. The `appstore/1.2.0` tag identifies the 1.2.0 release source. Earlier submitted release tags remain unchanged.
 
 Release tags identify submitted source snapshots. Documentation updates after submission do not move those tags.
 

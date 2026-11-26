@@ -71,7 +71,6 @@ final class AppModel {
     var lastStreamActivityAt: Date?
     var aprsDiagnosticEntries: [APRSDiagnosticEntry] = []
     var trail: [CLLocationCoordinate2D] = []
-    var selectedStation: APRSStation?
 
     var isDemoMode: Bool { experienceMode == .demo }
 
