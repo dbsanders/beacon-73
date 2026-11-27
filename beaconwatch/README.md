@@ -2,7 +2,7 @@
 
 BeaconWatch is a privacy-minimized APRS-IS receiver and map for Beacon 73. It connects to the worldwide filtered feed at `rotate.aprs2.net:14580` with the APRS-IS unproto/TOCALL filter `u/APB730`, and it also rejects non-`APB730` packets locally.
 
-The database deliberately retains only one callsign and coordinate pair per station. The first decoded position is retained until a later position is more than 250 km away, at which point that same row is replaced. It does not store packet bodies, comments, paths, IP addresses, timestamps, or location history.
+The database deliberately retains only one base callsign and coordinate pair per operator, grouping APRS SSIDs such as `KN6KCE-5` and `KN6KCE-9` into one map point. The first decoded position is retained until a later position from any SSID is more than 250 km away, at which point that same row is replaced. Existing SSID rows are consolidated when the service starts; a bare-callsign row takes precedence, or the alphabetically first SSID row if none exists. It does not store packet bodies, comments, paths, IP addresses, timestamps, or location history.
 
 Beacon 73 currently transmits uncompressed APRS positions, which this service decodes. Other packet types and position encodings are ignored.
 

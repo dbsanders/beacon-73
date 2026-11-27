@@ -46,7 +46,8 @@ if ! nginx -t; then
 fi
 
 systemctl daemon-reload
-systemctl enable --now beaconwatch.service
+systemctl enable beaconwatch.service
+systemctl restart beaconwatch.service
 systemctl reload nginx
 
 echo "BeaconWatch installed. nginx backup: $backup_path"

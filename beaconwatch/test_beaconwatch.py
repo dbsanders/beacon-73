@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -45,7 +46,7 @@ class LocationStoreTests(unittest.TestCase):
         self.assertEqual(self.store.record(nearby), "unchanged")
         self.assertEqual(
             self.store.all(),
-            [{"callsign": "K6BAT-7", "latitude": 33.68, "longitude": -117.83}],
+            [{"callsign": "K6BAT", "latitude": 33.68, "longitude": -117.83}],
         )
 
     def test_replaces_point_after_more_than_250_km(self):
@@ -59,7 +60,47 @@ class LocationStoreTests(unittest.TestCase):
     def test_keeps_callsigns_separate(self):
         self.store.record(Position("K6BAT", 33.68, -117.83))
         self.store.record(Position("N6IPD-15", 40.0, -75.0))
-        self.assertEqual([row["callsign"] for row in self.store.all()], ["K6BAT", "N6IPD-15"])
+        self.assertEqual([row["callsign"] for row in self.store.all()], ["K6BAT", "N6IPD"])
+
+    def test_groups_ssids_and_applies_movement_threshold_to_base_callsign(self):
+        self.assertEqual(self.store.record(Position("KN6KCE-9", 33.68, -117.83)), "inserted")
+        self.assertEqual(self.store.record(Position("KN6KCE-5", 34.05, -118.24)), "unchanged")
+        self.assertEqual(
+            self.store.all(),
+            [{"callsign": "KN6KCE", "latitude": 33.68, "longitude": -117.83}],
+        )
+        self.assertEqual(self.store.record(Position("KN6KCE-5", 37.77, -122.42)), "moved")
+        self.assertEqual(
+            self.store.all(),
+            [{"callsign": "KN6KCE", "latitude": 37.77, "longitude": -122.42}],
+        )
+
+    def test_collapses_existing_ssid_rows_on_startup(self):
+        database_path = Path(self.temporary_directory.name) / "legacy.db"
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                "CREATE TABLE locations (callsign TEXT PRIMARY KEY, latitude REAL NOT NULL, "
+                "longitude REAL NOT NULL)"
+            )
+            connection.executemany(
+                "INSERT INTO locations VALUES (?, ?, ?)",
+                [
+                    ("KN6KCE-9", 37.77, -122.42),
+                    ("KN6KCE-5", 33.68, -117.83),
+                    ("K6BAT", 34.0, -118.0),
+                    ("K6BAT-7", 35.0, -119.0),
+                ],
+            )
+
+        migrated = LocationStore(database_path)
+        self.assertEqual(
+            migrated.all(),
+            [
+                {"callsign": "K6BAT", "latitude": 34.0, "longitude": -118.0},
+                {"callsign": "KN6KCE", "latitude": 33.68, "longitude": -117.83},
+            ],
+        )
+        self.assertEqual(LocationStore(database_path).all(), migrated.all())
 
 
 if __name__ == "__main__":

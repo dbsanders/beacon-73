@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Receive Beacon 73 APRS packets and publish one map point per callsign."""
+"""Receive Beacon 73 APRS packets and publish one map point per base callsign."""
 
 from __future__ import annotations
 
@@ -101,31 +101,49 @@ class LocationStore:
                 )
                 """
             )
+            # Existing databases keyed by full APRS source can contain several
+            # SSIDs for one operator. Keep the bare callsign's point when it
+            # exists; otherwise keep the first SSID in callsign order.
+            rows = connection.execute(
+                "SELECT callsign, latitude, longitude FROM locations ORDER BY callsign"
+            ).fetchall()
+            for callsign, latitude, longitude in rows:
+                base_callsign = callsign.split("-", 1)[0]
+                if base_callsign != callsign:
+                    connection.execute(
+                        "INSERT OR IGNORE INTO locations (callsign, latitude, longitude) "
+                        "VALUES (?, ?, ?)",
+                        (base_callsign, latitude, longitude),
+                    )
+                    connection.execute(
+                        "DELETE FROM locations WHERE callsign = ?", (callsign,)
+                    )
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.database_path, timeout=10)
 
     def record(self, position: Position) -> str:
         """Insert once, or replace only after movement exceeds the threshold."""
+        base_callsign = position.callsign.split("-", 1)[0]
         with self._lock, self._connect() as connection:
             row = connection.execute(
                 "SELECT latitude, longitude FROM locations WHERE callsign = ?",
-                (position.callsign,),
+                (base_callsign,),
             ).fetchone()
             if row is None:
                 connection.execute(
                     "INSERT INTO locations (callsign, latitude, longitude) VALUES (?, ?, ?)",
-                    (position.callsign, position.latitude, position.longitude),
+                    (base_callsign, position.latitude, position.longitude),
                 )
                 return "inserted"
 
-            current = Position(position.callsign, row[0], row[1])
+            current = Position(base_callsign, row[0], row[1])
             if distance_km(current, position) <= MOVEMENT_THRESHOLD_KM:
                 return "unchanged"
 
             connection.execute(
                 "UPDATE locations SET latitude = ?, longitude = ? WHERE callsign = ?",
-                (position.latitude, position.longitude, position.callsign),
+                (position.latitude, position.longitude, base_callsign),
             )
             return "moved"
 
